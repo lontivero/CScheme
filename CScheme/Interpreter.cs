@@ -72,8 +72,9 @@ public class Interpreter
         Func<ImmutableArray<Expression>, ImmutableArray<Expression>> fn,
         Token[] rest, ImmutableArray<Expression> acc)
     {
-        var (exprs, rest2) = Parse(ImmutableArray<Expression>.Empty, rest);
-        return Parse(acc.Add(ListExpr(fn(exprs))), rest2);
+        var (exprs, rest2) = Parse([], rest);
+        return fn(exprs).AndThen(ListExpr).AndThen(acc.Add).AndThen(pacc => Parse(pacc, rest2));
+        //return Parse(acc.Add(ListExpr(fn(exprs))), rest2);
     }
 
     public static (ImmutableArray<Expression>, Token[] rest) Parse(ImmutableArray<Expression> acc, Token[] tokens) =>
@@ -81,7 +82,7 @@ public class Interpreter
         {
             [OpenToken, .. var t] => ParseList(e => e, t, acc),
             [CloseToken, .. var t] => (acc, t),
-            [QuoteToken, OpenToken, .. var t] => ParseList(e => [QuoteExpr, ListExpr(e)], t, acc),
+            [QuoteToken, OpenToken, .. var t] =>  ParseList(e => [QuoteExpr, ListExpr(e)], t, acc),
             [QuoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuoteExpr, MapTokenToExpression(h))), t),
             [UnquoteToken, OpenToken, .. var t] => ParseList(e => [UnquoteExpr, ListExpr(e)], t, acc),
             [UnquoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteExpr, MapTokenToExpression(h))), t),
@@ -527,7 +528,8 @@ public class Interpreter
     public class SyntaxException(string msg) : Exception(msg);
 }
 
-public static class FunctionExtentions
+public static class FunctionExtensions
 {
+    [DebuggerStepThrough]
     public static T AndThen<R,T>(this R me, Func<R, T> then) => then(me);
 }

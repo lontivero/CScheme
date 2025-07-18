@@ -14,6 +14,12 @@ public static class Tokenizer
     public record StringToken(string str) : Token;
     public record SymbolToken(string symbol) : Token;
 
+    public static readonly OpenToken Open = new();
+    public static readonly CloseToken Close = new();
+    public static readonly QuoteToken Quote = new();
+    public static readonly UnquoteToken Unquote = new();
+    public static readonly BooleanToken True = new(true);
+    public static readonly BooleanToken False = new(false);
     public static IEnumerable<Token> Tokenize(string source)
     {
         var chars = source.ToCharArray();
@@ -40,19 +46,19 @@ public static class Tokenizer
             {
                 case '(':
                     i++;
-                    yield return new OpenToken();
+                    yield return Open;
                     break;
                 case ')':
                     i++;
-                    yield return new CloseToken();
+                    yield return Close;
                     break;
                 case '\'':
                     i++;
-                    yield return new QuoteToken();
+                    yield return Quote;
                     break;
                 case ',':
                     i++;
-                    yield return new UnquoteToken();
+                    yield return Unquote;
                     break;
                 case '"':
                     yield return new StringToken(ParseString());
@@ -65,8 +71,8 @@ public static class Tokenizer
                     yield return ParseToken()
                         .AndThen<string, Token>(t => t switch
                         {
-                            "#t" => new BooleanToken(true),
-                            "#f" => new BooleanToken(false),
+                            "#t" => True,
+                            "#f" => False,
                             [var c, .. _] when Char.IsDigit(c) => new NumberToken(t),
                             var symbol => new SymbolToken(symbol)
                         });
