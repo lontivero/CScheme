@@ -1,23 +1,32 @@
-﻿; logical 'and', 'or', 'not', 'xor'
-(define and (macro (a b) '(if ,a (if ,b 1 0) 0)))
-(define or (macro (a b) '(if ,a 1 (if ,b 1 0))))
-(define not? (lambda (x) (if x 0 1)))
+﻿(define cond (macro (args)
+               (if (null? args)
+                  nil
+                  (begin
+                    (define h (car args))
+                    (define t (cdr args))
+                    (define test1 (if (equal? (car h) 'else) '#t (car h)))
+                    (define expr1 (car (cdr h)))
+                    '(if ,test1 ,expr1 (cond ,t))))))
+
+; logical 'and', 'or', 'not', 'xor'
+(define and (macro (a b) '(if ,a (if ,b #t #f) #f)))
+(define or (macro (a b) '(if ,a #t (if ,b #t #f))))
+(define not? (lambda (x) (if x #f #t)))
 (define xor (lambda (a b) (and (or a b) (not? (and a b)))))
 
 (define nil '())
 
 ; map function (f) over list (xs)
-(define map (lambda (f xs)    ; apply f to each element of xs
-  (if xs                      ; if not empty then
-      (cons (f (car xs))      ; cons f of the head...
-            (map f (cdr xs))) ; onto result of recursing down the tail
-      nil)))                  ; otherwise return empty
+(define map (lambda (f xs)
+  (if (null? xs)
+      nill
+      (cons (f (car xs)) (map f (cdr xs))))))
 
 (define list (macro (xs) '(map eval (quote ,xs))))
 
 ; fold function (f) over list (xs) while accumulating (a)
 (define fold (lambda (f a xs)
-  (if (not? xs) a
+  (if (null? xs) a
       (fold f (f (car xs) a) (cdr xs)))
   ))
 
@@ -41,35 +50,35 @@
 (define sum (lambda (xs) (fold + 0 xs)))
 (define odd? (lambda (x) (% x 2)))
 (define even? (lambda (x) (not? (odd? x))))
-(define equal? (lambda (a b) (= a b)))
 
 (define require (lambda (e) (if e e (amb))))
 
-(define length (lambda (xs) (if xs (+ 1 (length (cdr xs))) 0)))
-(define empty? (lambda (xs) (= 0 (length xs))))
+(define length (lambda (xs) (if (null? xs) 0 (+ 1 (length (cdr xs))))))
 (define range (lambda (l r)(if (= l r) '() (cons l (range (+ 1 l) r)))))
-(define filter (lambda (f xs) (if (not? xs) '() (if (f (car xs)) (cons (car xs) (filter (cdr xs) f)) (filter (cdr xs) f)))))
+(define filter (lambda (f xs) (if (null? xs) '() (if (f (car xs)) (cons (car xs) (filter (cdr xs) f)) (filter (cdr xs) f)))))
 
 (define member? (lambda (item lst)
-     (if lst
+     (if (null? lst)
+         #f
          (if (= item (car lst))
-             1
+             #t
              (member? item (cdr lst)))
-         0)))
+         )))
 
 (define distinct? (lambda (lst)
-    (if lst
+    (if (null? lst)
+         #t
          (if (member? (car lst) (cdr lst))
-             0
+             #f
              (distinct? (cdr lst)))
-         1)))
+         )))
 
 (define exclude (lambda (items lst)
-     (if lst
+     (if (null? lst)
+         ()
          (if (member? (car lst) items)
              (exclude items (cdr lst))
-             (cons (car lst) (exclude items (cdr lst))))
-         ())))
+             (cons (car lst) (exclude items (cdr lst)))))))
 
 (define cadr (lambda (xs) (car (cdr xs))))
 (define caddr (lambda (xs) (cadr (cdr xs))))

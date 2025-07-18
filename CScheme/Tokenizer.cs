@@ -10,6 +10,7 @@ public static class Tokenizer
     public record QuoteToken : Token;
     public record UnquoteToken : Token;
     public record NumberToken(string number) : Token;
+    public record BooleanToken(bool b) : Token;
     public record StringToken(string str) : Token;
     public record SymbolToken(string symbol) : Token;
 
@@ -61,9 +62,14 @@ public static class Tokenizer
                     yield return new NumberToken(ParseToken());
                     break;
                 default:
-                    yield return Char.IsDigit(current)
-                        ? new NumberToken(ParseToken())
-                        : new SymbolToken(ParseToken());
+                    yield return ParseToken()
+                        .AndThen<string, Token>(t => t switch
+                        {
+                            "#t" => new BooleanToken(true),
+                            "#f" => new BooleanToken(false),
+                            [var c, .. _] when Char.IsDigit(c) => new NumberToken(t),
+                            var symbol => new SymbolToken(symbol)
+                        });
                     break;
             }
         }
