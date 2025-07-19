@@ -3,7 +3,7 @@ using System.Diagnostics;
 using CScheme;
 using static CScheme.Tokenizer;
 
-using Environment = System.Collections.Immutable.ImmutableArray<System.Collections.Immutable.ImmutableDictionary<string, CScheme.Expression>>;
+using Environment = System.Collections.Immutable.ImmutableDictionary<string, CScheme.Expression>;
 [assembly: DebuggerDisplay("{Interpreter.Print(this),ng}", Target = typeof(Expression))]
 
 namespace CScheme;
@@ -17,19 +17,16 @@ public class Interpreter
 {
     private static Expression Lookup(string symbol, Environment env)
     {
-        foreach (var frame in env)
+        if (env.TryGetValue(symbol, out var value))
         {
-            if (frame.TryGetValue(symbol, out var value))
-            {
-                return value;
-            }
+            return value;
         }
 
         throw new InvalidOperationException($"No binding for '{symbol}'.");
     }
 
     private static Environment ExtendEnvironment(IEnumerable<(string s, Expression e)> bindings, Environment env) =>
-        env.Insert(0, bindings.ToImmutableDictionary(x => x.s, x => x.e));
+        env.SetItems(bindings.Select(x => KeyValuePair.Create(x.s, x.e)));
 
     private delegate Expression ExpressionsProcessor(ImmutableArray<Expression> args);
 
@@ -92,7 +89,6 @@ public class Interpreter
 
     public static EvalContext Eval(Environment env, Expression expr)
     {
-        Console.WriteLine(Print(expr));
         return expr switch
         {
             Number num => new EvalContext(env, num),
@@ -103,7 +99,7 @@ public class Interpreter
             {
                 Function f => Apply(ctx.Environment, f.Fn, t),
                 Special f => f.Fn(ctx.Environment, t),
-                _ => throw SyntaxError("", [expr])
+                _ => throw SyntaxError("The first element in a list must be a function", [expr, ctx.Expression])
             }),
             DummyExpression s => throw new InvalidOperationException($"Cannot evaluate dummy value '{s.Val}'"),
             var e => throw SyntaxError("Error", [e])
@@ -168,6 +164,8 @@ public class Interpreter
             [String a, String b] => a.Value == b.Value ? True : False,
             [Boolean a, Boolean b] => a.Bool == b.Bool ? True : False,
             [Symbol a, Symbol b] => a.Value == b.Value ? True : False,
+            [Function a, Function b] => a.Fn == b.Fn ? True : False,
+            [Special a, Special b] => a.Fn == b.Fn ? True : False,
             [List a, List b] when a.Expressions.Length == b.Expressions.Length => 
                 a.Expressions
                     .Zip(b.Expressions, (pa, pb)=>(pa, pb))
@@ -200,6 +198,16 @@ public class Interpreter
             [List {Expressions: [_, .. var t]}] => ListExpr(t),
             _ => throw SyntaxError("'cdr'", es)
         };
+
+    private static Expression Cat(ImmutableArray<Expression> es)
+    {
+        if (es.All(e => e is List))
+        {
+            return ListExpr(es.Cast<List>().SelectMany(x => x.Expressions).ToImmutableArray());
+        }
+
+        throw SyntaxError("'cdr'", es);
+    }
 
     private static Expression Cons(ImmutableArray<Expression> es) =>
         es switch
@@ -294,14 +302,18 @@ public class Interpreter
 
     private static EvalContext Lambda(Environment env, ImmutableArray<Expression> expr)
     {
-        if (expr is not [List {Expressions: var parameters}, var body])
+        var (pparameters, pbody) = expr switch
         {
-            throw SyntaxError("'lambda'", expr);
-        }
+            [List {Expressions: var parameters}, var body] => (parameters, body),
+            [var parameter, var body] => ([parameter], body),
+            _ => throw SyntaxError("'lambda'", expr)
+        };
+
+        return new EvalContext(env, new Special(Closure));
 
         EvalContext Closure(Environment callerEnv, ImmutableArray<Expression> args)
         {
-            return MapBind([], [..Zip(parameters, args)]);
+            return MapBind([], [..Zip(pparameters, args)]);
 
             EvalContext MapBind(ImmutableArray<(string, Expression)> acc,
                 ImmutableArray<(Expression, Expression)> pargs) =>
@@ -309,12 +321,10 @@ public class Interpreter
                 {
                     [(Symbol {Value: var p}, var a), .. var t] => Eval(callerEnv, a)
                         .AndThen(ctx => MapBind(acc.Add((p, ctx.Expression)), t)),
-                    [] => Eval(ExtendEnvironment(acc, callerEnv.AddRange(env)), body),
+                    [] => Eval(ExtendEnvironment(acc, callerEnv.AddRange(env)), pbody),
                     _ => throw SyntaxError("'lambda' parameter.", args)
                 };
         }
-
-        return new EvalContext(env, new Special(Closure));
     }
 
     private static EvalContext Quote(Environment env, ImmutableArray<Expression> exprs)
@@ -366,6 +376,8 @@ public class Interpreter
         return exprs switch
         {
             [Symbol {Value: var sym}, var e] => InternalDefine(sym, e),
+            [List { Expressions: [Symbol { Value: var sym }, .. var ps]}, var body] => 
+                InternalDefine(sym, ListExpr(new Symbol("lambda"), ListExpr(ps), body)),
             [] => throw SyntaxError("'Define'", exprs)
         };
     }
@@ -375,14 +387,7 @@ public class Interpreter
         {
             [Symbol {Value: var sym}, var e] => Eval(env, e).AndThen(ctx =>
                 // set! is dangerous because it alters the bindings table. Should I remove it???
-                new EvalContext(
-                [
-                    // Fixme: too ugly. Just replace the binding in the closer frame
-                    env.SelectMany(x => x)
-                        .ToLookup(x => x.Key, x => x.Value)
-                        .ToImmutableDictionary(x => x.Key, x => x.First())
-                        .SetItem(sym, ctx.Expression)
-                ], new DummyExpression($"Set {sym}"))),
+                new EvalContext(env.SetItem(sym, ctx.Expression), new DummyExpression($"Set {sym}"))),
             _ => throw SyntaxError("set!", exprs)
         };
 
@@ -451,48 +456,23 @@ public class Interpreter
     public static EvalContext Load(Environment env, string filename) =>
         Load(env, [new String(filename)]);
 
-    private static (Environment Env, string Result) Rep(Environment env, string prg)
+    internal static (Environment Env, string Result) Rep(Environment env, string prg)
     {
         var (parsingResult, _) = Parse([], Tokenize(prg).ToArray());
         var (penv, expressionResult) = Eval(env, parsingResult[0]);
         return (penv, Print(expressionResult));
     }
 
-    public static void Repl(Environment env)
-    {
-        void InternalRepl(Environment env)
-        {
-            while (true)
-            {
-                Console.Write("> ");
-                var line = Console.ReadLine();
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                try
-                {
-                    var (penv, result) = Rep(env, line);
-                    if (!string.IsNullOrWhiteSpace(result))
-                    {
-                        Console.WriteLine(result);
-                    }
-                    env = penv;
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.Message);
-                }
-            }
-        }
-
-        InternalRepl(env);
-    }
+    private static Boolean Is<T>(ImmutableArray<Expression> xs) => xs is [T] ? True : False;
     
-    public static readonly Environment Env = [new Dictionary<string, Expression> {
+    public static readonly Environment Env = new Dictionary<string, Expression> {
         { "*", new Function(Multiply) },
         { "/", new Function(Divide) },
         { "%", new Function(Modulus) },
         { "+", new Function(Add) },
         { "-", new Function(Subtract) },
         { "=", new Function(Equal) },
+        { "eq?", new Function(StructuralEqual) },
         { "equal?", new Function(StructuralEqual) },
         { ">", new Function(Greater) },
         { "<", new Function(Less) },
@@ -505,6 +485,7 @@ public class Interpreter
         { "cons", new Function(Cons) },
         { "car", new Function(Car) },
         { "cdr", new Function(Cdr) },
+        { "cat", new Function(Cat) },
         { "quote", new Special(Quote) },
         { "eval", new Special(Eval) },
         { "macro", new Special(Macro) },
@@ -513,9 +494,15 @@ public class Interpreter
         { "define", new Special(Define) },
         { "load", new Special(Load) },
         { "display", new Function(Display) },
+        { "number?", new Function(Is<Number>) },
+        { "string?", new Function(Is<String>) },
+        { "boolean?", new Function(Is<Boolean>) },
+        { "symbol?", new Function(Is<Symbol>) },
+        { "list?", new Function(Is<List>) },
+        { "not", new Function(e => e is [Boolean { Bool: false }] ? True : False)}
    //     { "call/cc", new SpecialExpression(CallCC) },
    //     { "amb", new SpecialExpression(Ambivalent) },
-    }.ToImmutableDictionary()];
+    }.ToImmutableDictionary();
 
     private static IEnumerable<(Expression, Expression)> Zip(ImmutableArray<Expression> ps, ImmutableArray<Expression> args) =>
         ps.Zip(ps.Length == args.Length

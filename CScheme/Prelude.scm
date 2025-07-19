@@ -19,20 +19,40 @@
 ; map function (f) over list (xs)
 (define map (lambda (f xs)
   (if (null? xs)
-      nill
-      (cons (f (car xs)) (map f (cdr xs))))))
+    nil
+    (cons (f (car xs)) (map f (cdr xs))))))
 
 (define list (macro (xs) '(map eval (quote ,xs))))
 
-; fold function (f) over list (xs) while accumulating (a)
+(define append-two (lambda (list1 list2)
+  (cond
+    ((null? list1) list2)
+    (else
+      (cons (car list1)
+        (append-two (cdr list1) list2))))))
+
+(define append (lambda (lists)
+  (cond
+    ((null? lists) '())
+    ((null? (cdr lists)) (car lists))
+    (else
+      (let ((h (car lists))
+            (t (append (cdr lists))))
+        (append-two h t))))))
+
+(define list-ref (lambda (lst n)
+  (cond
+    ((null? lst) #f)
+    ((= n 0) (car lst))
+    ((< n 0) #f)
+    (else (list-ref (cdr lst) (- n 1))))))
+
 (define fold (lambda (f a xs)
   (if (null? xs) a
       (fold f (f (car xs) a) (cdr xs)))
   ))
 
 (define reverse (lambda (xs) (fold cons nil xs)))
-
-(define newline (lambda () (display "\r\n")))
 
 ; simple continuation to top-level
 (define escape nil)
@@ -48,6 +68,9 @@
 (define inc (lambda (x)(+ 1 x)))
 (define dec (lambda (x)(- x 1)))
 (define sum (lambda (xs) (fold + 0 xs)))
+(define abs (lambda (x) (if (< x 0) (* -1 x) x)))
+(define modulo (lambda (x y) (% x y)) )
+(define remainder (lambda (x y) (% x y)) )
 (define odd? (lambda (x) (% x 2)))
 (define even? (lambda (x) (not? (odd? x))))
 
@@ -100,4 +123,8 @@
               (begin ,body (loop))
               nil))))
        (loop))))
+
+(define newline (lambda () (display "\r\n")))
+(define (write text) (display text))
+(define (writeln text) (begin (display text) (newline)))
 
