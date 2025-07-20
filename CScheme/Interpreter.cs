@@ -51,6 +51,7 @@ public class Interpreter
 
     private static readonly Symbol QuoteExpr = new("quote");
     private static readonly Symbol UnquoteExpr = new("unquote");
+    private static readonly Symbol UnquoteSplicingExpr = new("unquote-splicing");
     private static readonly Boolean True = new(true);
     private static readonly Boolean False = new(false);
     private static readonly DummyExpression DummyExpr = new("dummy for letrec");
@@ -85,6 +86,7 @@ public class Interpreter
             [QuoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuoteExpr, MapTokenToExpression(h))), t),
             [UnquoteToken, OpenToken, .. var t] => ParseList(e => [UnquoteExpr, ListExpr(e)], t, acc),
             [UnquoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteExpr, MapTokenToExpression(h))), t),
+            [UnquoteSplicingToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteSplicingExpr, MapTokenToExpression(h))), t),
             [var h, .. var t] => Parse(acc.Add(MapTokenToExpression(h)), t),
             [] => (acc, []),
         };
@@ -339,23 +341,29 @@ public class Interpreter
     {
         Expression MapUnquote(ImmutableArray<Expression> acc, ImmutableArray<Expression> es) => es switch
         {
-            [var h, .. var t] => MapUnquote(acc.Add(Unquote(h)), t),
+            [var h, .. var t] => MapUnquote(acc.AddRange(Unquote(h)), t),
             [] => ListExpr(acc)
         };
 
-        Expression Unquote(Expression expr) => expr switch
+        ImmutableArray<Expression> Unquote(Expression expr) => expr switch
         {
+            List {Expressions: [Symbol {Value: "unquote-splicing"}, var e]} => Eval(env, e).AndThen(
+                 t => t.Expression switch
+                 {
+                     List { Expressions: var es } => es,
+                     var e => [e]
+                 }),
             List {Expressions: [Symbol {Value: "unquote"}, var e]} => Eval(env, e).AndThen(
-                t => t.Expression),
+                t => (ImmutableArray<Expression>) [t.Expression]),
             List {Expressions: [Symbol {Value: "unquote"}, .. _]} m => throw SyntaxError(
                 "unquote (too many args)", [m]),
-            List {Expressions: var lst} => MapUnquote([], lst),
-            _ => expr
+            List {Expressions: var lst} => [MapUnquote([], lst)],
+            _ => [expr]
         };
 
         if (exprs is [var e])
         {
-            return new EvalContext(env, Unquote(e));
+            return new EvalContext(env, Unquote(e).AndThen(r => r is [var expression] ? expression : ListExpr(r)) );
         }
 
         throw SyntaxError("'quote'", exprs);

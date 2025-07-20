@@ -9,6 +9,7 @@ public static class Tokenizer
     public record CloseToken : Token;
     public record QuoteToken : Token;
     public record UnquoteToken : Token;
+    public record UnquoteSplicingToken : Token;
     public record NumberToken(string number) : Token;
     public record BooleanToken(bool b) : Token;
     public record StringToken(string str) : Token;
@@ -18,6 +19,7 @@ public static class Tokenizer
     public static readonly CloseToken Close = new();
     public static readonly QuoteToken Quote = new();
     public static readonly UnquoteToken Unquote = new();
+    public static readonly UnquoteSplicingToken UnquoteSplicing = new();
     public static readonly BooleanToken True = new(true);
     public static readonly BooleanToken False = new(false);
     public static IEnumerable<Token> Tokenize(string source)
@@ -55,6 +57,10 @@ public static class Tokenizer
                 case '\'':
                     i++;
                     yield return Quote;
+                    break;
+                case ',' when i + 1 < chars.Length && chars[i + 1] == '@':
+                    i += 2;
+                    yield return UnquoteSplicing;
                     break;
                 case ',':
                     i++;
