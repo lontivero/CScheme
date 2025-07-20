@@ -244,14 +244,14 @@ public class Interpreter
 
         return exprs switch
         {
-            [List {Expressions: var bindings}, var body] => MapBind([], bindings, body),
+            [List {Expressions: var bindings}, .. var body] => MapBind([], bindings, WrapBegin(body)),
             _ => throw SyntaxError("'let' must have bindings and a body expression.", exprs)
         };
     }
 
     private static EvalContext LetRec(Environment env, ImmutableArray<Expression> exprs)
     {
-        if (exprs is not [List {Expressions: var bindings}, var body])
+        if (exprs is not [List {Expressions: var bindings}, .. var body])
         {
             throw SyntaxError("'let' must have bindings and a body expression.", exprs);
         }
@@ -278,7 +278,7 @@ public class Interpreter
             {
                 [List {Expressions: [Symbol {Value: var s}, var e]}, .. var restBindings] =>
                     InternalMapUpdate(s, e, restBindings),
-                [] => Eval(extendedEnv, body),
+                [] => Eval(extendedEnv, WrapBegin(body)),
                 _ => throw SyntaxError("'let' binding.", bindings)
             };
         }
@@ -286,19 +286,19 @@ public class Interpreter
 
     private static EvalContext LetStar(Environment env, ImmutableArray<Expression> exprs)
     {
-        EvalContext FoldBind(Environment penv, ImmutableArray<Expression> bindings, Expression body) =>
+        EvalContext FoldBind(Environment penv, ImmutableArray<Expression> bindings, ImmutableArray<Expression> body) =>
             bindings switch
             {
                 [List {Expressions: [Symbol {Value: var s}, var e]}, .. var restBindings] =>
                     Eval(penv, e).AndThen(ctx =>
                         FoldBind(ExtendEnvironment([(s, ctx.Expression)], ctx.Environment), restBindings, body)), // TODO: check what environment to use
-                [] => Eval(penv, body),
+                [] => Eval(penv, WrapBegin(body)),
                 _ => throw SyntaxError("'let*' binding.", bindings)
             };
 
         return exprs switch
         {
-            [List {Expressions: var bindings}, var body] => FoldBind(env, bindings, body),
+            [List {Expressions: var bindings}, .. var body] => FoldBind(env, bindings, body),
             _ => throw SyntaxError("'let*' must have bindings and a body expression.", exprs)
         };
     }
@@ -307,8 +307,8 @@ public class Interpreter
     {
         var (pparameters, pbody) = expr switch
         {
-            [List {Expressions: var parameters}, var body] => (parameters, body),
-            [var parameter, var body] => ([parameter], body),
+            [List {Expressions: var parameters}, .. var body] => (parameters, body),
+            [var parameter, .. var body] => ([parameter], body),
             _ => throw SyntaxError("'lambda'", expr)
         };
 
@@ -324,11 +324,16 @@ public class Interpreter
                 {
                     [(Symbol {Value: var p}, var a), .. var t] => Eval(callerEnv, a)
                         .AndThen(ctx => MapBind(acc.Add((p, ctx.Expression)), t)),
-                    [] => Eval(ExtendEnvironment(acc, callerEnv.AddRange(env)), pbody),
+                    [] => Eval(ExtendEnvironment(acc, callerEnv.SetItems(env)), WrapBegin(pbody)),
                     _ => throw SyntaxError("'lambda' parameter.", args)
                 };
         }
     }
+
+    private static Expression WrapBegin(ImmutableArray<Expression> exprs) =>
+        exprs is [var e]
+            ? e
+            : ListExpr( exprs.Insert(0, new Symbol("begin")));
 
     private static EvalContext Quote(Environment env, ImmutableArray<Expression> exprs)
     {
@@ -379,8 +384,8 @@ public class Interpreter
         return exprs switch
         {
             [Symbol {Value: var sym}, var e] => InternalDefine(sym, e),
-            [List { Expressions: [Symbol { Value: var sym }, .. var ps]}, var body] => 
-                InternalDefine(sym, ListExpr(new Symbol("lambda"), ListExpr(ps), body)),
+            [List { Expressions: [Symbol { Value: var sym }, .. var ps]}, .. var body] => 
+                InternalDefine(sym, ListExpr(new Symbol("lambda"), ListExpr(ps), WrapBegin(body))),
             [] => throw SyntaxError("'Define'", exprs)
         };
     }
@@ -556,8 +561,6 @@ public class Interpreter
         { "symbol?", new Function(Is<Symbol>) },
         { "list?", new Function(Is<List>) },
         { "not", new Function(e => e is [Boolean { Bool: false }] ? True : False)}
-   //     { "call/cc", new SpecialExpression(CallCC) },
-   //     { "amb", new SpecialExpression(Ambivalent) },
     }.ToImmutableDictionary();
 
     private static IEnumerable<(Expression, Expression)> Zip(ImmutableArray<Expression> ps, ImmutableArray<Expression> args) =>
