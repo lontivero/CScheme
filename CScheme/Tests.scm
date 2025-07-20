@@ -41,14 +41,14 @@
 
 (test 70 (let ((x 2) (y 3)) (let* ((x 7) (z (+ x y))) (* z x))))
 
-; (test -2 (let ()
-;            (define x 2)
-;            (define f (lambda () (- x)))
-;            (f)))
+(test -2 (let ()
+            (define x 2)
+            (define f (lambda () (- x)))
+            (f)))
 
-; (define let*-def 1)
-; (let* () (define let*-def 2) #f)
-; (test 1 let*-def)
+(define let*-def 1)
+(let* () (define let*-def 2) #f)
+(test 1 let*-def)
 ; 
 ; (test '#(0 1 2 3 4)
 ;   (do ((vec (make-vector 5))
@@ -79,7 +79,7 @@
 
 (test #t (eq? 'a 'a))
 
-; (test #f (eq? (list 'a) (list 'a)))
+(test #f (eq? (list 'a) (list 'a)))
 
 (test #t (eq? '() '()))
 
@@ -143,11 +143,11 @@
 
 (test #f (not 3))
 
-; (test #f (not (list 3)))
+(test #f (not (list 3)))
 
 (test #f (not '()))
 
-; (test #f (not (list)))
+(test #f (not (list)))
 
 (test #f (not '()))
 
