@@ -45,6 +45,8 @@ public class Interpreter
 
     private record Special(SpecialExpressionsProcessor Fn) : Expression;
 
+    public record NativeObject(object Value) : Expression;
+
     private record DummyExpression(string Val) : Expression;
 
     private static readonly Symbol QuoteExpr = new("quote");
@@ -123,10 +125,11 @@ public class Interpreter
         {
             List lst => $"({string.Join(" ", lst.Expressions.Select(Print))})",
             String str => str.Value,
-            Symbol sym => sym.Value,
+            Symbol sym => $"'{sym.Value}",
             Number num => num.Value.ToString(),
             Boolean b => b.Bool ? "#t" : "#f",
             Function or Special => "Function",
+            NativeObject o => $"{o.Value}",
             DummyExpression => string.Empty,
             _ => throw new ArgumentOutOfRangeException(nameof(expr))
         };
@@ -456,14 +459,67 @@ public class Interpreter
     public static EvalContext Load(Environment env, string filename) =>
         Load(env, [new String(filename)]);
 
-    internal static (Environment Env, string Result) Rep(Environment env, string prg)
-    {
-        var (parsingResult, _) = Parse([], Tokenize(prg).ToArray());
-        var (penv, expressionResult) = Eval(env, parsingResult[0]);
-        return (penv, Print(expressionResult));
-    }
-
     private static Boolean Is<T>(ImmutableArray<Expression> xs) => xs is [T] ? True : False;
+
+    public static Environment DefineNativeFunction(string fname, Func<object> fn, Environment env) =>
+        InternalDefineNativeFunction(fname, os => fn(), env);
+    
+    public static Environment DefineNativeFunction<T>(string fname, Func<T, object> fn, Environment env) =>
+        InternalDefineNativeFunction(fname, os => fn((T)os[0]), env);
+    
+    public static Environment DefineNativeFunction<T0, T1>(string fname, Func<T0, T1, object> fn, Environment env) =>
+        InternalDefineNativeFunction(fname, os => fn((T0)os[0], (T1)os[1]), env);
+    
+    private static Environment InternalDefineNativeFunction(string fname, Func<object[], object> fn, Environment env)
+    {
+        Expression MapNativeType(object obj) =>
+            obj switch
+            {
+                int intValue => new Number(intValue),
+                string stringValue => new String(stringValue),
+                bool booleanValue => booleanValue ? True : False,
+                IEnumerable<object> e => ListExpr(e.Select(MapNativeType).ToImmutableArray()),
+                var o => new NativeObject(o)
+            };
+        
+        object MapExpressionToNative(Expression e) =>
+            e switch
+            {
+                Number { Value: var intValue } => intValue,
+                String { Value: var stringValue } => stringValue,
+                Boolean { Bool: var boolValue } => boolValue,
+                NativeObject { Value: var objValue } => objValue,
+                Symbol { Value: var symValue } => symValue,
+                List { Expressions: var exprs } => exprs.Select(MapExpressionToNative),
+            };
+            
+        Expression MapNativeTypes(ImmutableArray<Expression> acc, ImmutableArray<object> objs) =>
+            objs switch
+            {
+                [var h, .. var t] => MapNativeType(h).AndThen(x => MapNativeTypes(acc.Add(x), t)),
+                [] => ListExpr(acc)
+            };
+
+        ImmutableArray<object> MapExpressionsToNative(ImmutableArray<object> acc, ImmutableArray<Expression> exprs) =>
+            exprs switch
+            {
+                [var h, .. var t] => MapExpressionToNative(h).AndThen(x => MapExpressionsToNative(acc.Add(x), t)),
+                [] => acc
+            };
+
+        Expression WrapNativeFunction(ImmutableArray<Expression> exprs)
+        {
+            var parameters = MapExpressionsToNative([], exprs);
+            var result = fn.Invoke(parameters.ToArray());
+            var nativeResult = MapNativeTypes([], [result]);
+            return nativeResult is List {Expressions: [var singleElement]}
+                ? singleElement
+                : nativeResult;
+        }
+        var fnative = new Function(WrapNativeFunction);
+        
+        return env.Add(fname, fnative);
+    }
     
     public static readonly Environment Env = new Dictionary<string, Expression> {
         { "*", new Function(Multiply) },
