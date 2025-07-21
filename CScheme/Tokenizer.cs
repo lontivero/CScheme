@@ -77,8 +77,8 @@ public static class Tokenizer
                     yield return ParseToken()
                         .AndThen<string, Token>(t => t switch
                         {
-                            "#t" => True,
-                            "#f" => False,
+                            "#t" or "#true" => True,
+                            "#f" or "#false"  => False,
                             [var c, .. _] when Char.IsDigit(c) => new NumberToken(t),
                             var symbol => new SymbolToken(symbol)
                         });
