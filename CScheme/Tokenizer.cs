@@ -8,6 +8,7 @@ public static class Tokenizer
     public record OpenToken : Token;
     public record CloseToken : Token;
     public record QuoteToken : Token;
+    public record QuasiQuoteToken : Token;
     public record UnquoteToken : Token;
     public record UnquoteSplicingToken : Token;
     public record NumberToken(string number) : Token;
@@ -15,13 +16,15 @@ public static class Tokenizer
     public record StringToken(string str) : Token;
     public record SymbolToken(string symbol) : Token;
 
-    public static readonly OpenToken Open = new();
-    public static readonly CloseToken Close = new();
-    public static readonly QuoteToken Quote = new();
-    public static readonly UnquoteToken Unquote = new();
-    public static readonly UnquoteSplicingToken UnquoteSplicing = new();
-    public static readonly BooleanToken True = new(true);
-    public static readonly BooleanToken False = new(false);
+    private static readonly OpenToken Open = new();
+    private static readonly CloseToken Close = new();
+    private static readonly QuoteToken Quote = new();
+    private static readonly QuasiQuoteToken QuasiQuote = new();
+    private static readonly UnquoteToken Unquote = new();
+    private static readonly UnquoteSplicingToken UnquoteSplicing = new();
+    private static readonly BooleanToken True = new(true);
+    private static readonly BooleanToken False = new(false);
+    
     public static IEnumerable<Token> Tokenize(string source)
     {
         var chars = source.ToCharArray();
@@ -57,6 +60,10 @@ public static class Tokenizer
                 case '\'':
                     i++;
                     yield return Quote;
+                    break;
+                case '`' :
+                    i++;
+                    yield return QuasiQuote;
                     break;
                 case ',' when i + 1 < chars.Length && chars[i + 1] == '@':
                     i += 2;

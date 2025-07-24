@@ -1,7 +1,7 @@
 (load "Prelude.scm")
 
 (define test (macro (expected expr)
-  '(begin
+  `(begin
     (newline)
     (display (if (equal? ,expected ,expr) "Passed " "!Failed \t"))
     (display (quote ,expr))
@@ -73,9 +73,9 @@
 ;       ((< (car numbers) 0)
 ;         (loop (cdr numbers) nonneg (cons (car numbers) neg))))))
 
-; (test '(list 3 4) `(list ,(+ 1 2) 4))
-; 
-; (test '(list a 'a) (let ((name 'a)) `(list ,name ',name)))
+(test '(list 3 4) `(list ,(+ 1 2) 4))
+ 
+(test '(list a 'a) (let ((name 'a)) `(list ,name ',name)))
 
 (test #t (eq? 'a 'a))
 

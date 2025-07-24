@@ -50,6 +50,7 @@ public class Interpreter
     private record DummyExpression(string Val) : Expression;
 
     private static readonly Symbol QuoteExpr = new("quote");
+    private static readonly Symbol QuasiQuoteExpr = new("quasiquote");
     private static readonly Symbol UnquoteExpr = new("unquote");
     private static readonly Symbol UnquoteSplicingExpr = new("unquote-splicing");
     private static readonly Boolean True = new(true);
@@ -74,7 +75,6 @@ public class Interpreter
     {
         var (exprs, rest2) = Parse([], rest);
         return fn(exprs).AndThen(ListExpr).AndThen(acc.Add).AndThen(pacc => Parse(pacc, rest2));
-        //return Parse(acc.Add(ListExpr(fn(exprs))), rest2);
     }
 
     public static (ImmutableArray<Expression>, Token[] rest) Parse(ImmutableArray<Expression> acc, Token[] tokens) =>
@@ -83,7 +83,10 @@ public class Interpreter
             [OpenToken, .. var t] => ParseList(e => e, t, acc),
             [CloseToken, .. var t] => (acc, t),
             [QuoteToken, OpenToken, .. var t] =>  ParseList(e => [QuoteExpr, ListExpr(e)], t, acc),
+            [QuoteToken, UnquoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuoteExpr, ListExpr(UnquoteExpr, MapTokenToExpression(h)))), t),
             [QuoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuoteExpr, MapTokenToExpression(h))), t),
+            [QuasiQuoteToken, OpenToken, .. var t] =>  ParseList(e => [QuasiQuoteExpr, ListExpr(e)], t, acc),
+            [QuasiQuoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuasiQuoteExpr, MapTokenToExpression(h))), t),
             [UnquoteToken, OpenToken, .. var t] => ParseList(e => [UnquoteExpr, ListExpr(e)], t, acc),
             [UnquoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteExpr, MapTokenToExpression(h))), t),
             [UnquoteSplicingToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteSplicingExpr, MapTokenToExpression(h))), t),
@@ -337,7 +340,7 @@ public class Interpreter
             ? e
             : ListExpr( exprs.Insert(0, new Symbol("begin")));
 
-    private static EvalContext Quote(Environment env, ImmutableArray<Expression> exprs)
+    private static EvalContext QuasiQuote(Environment env, ImmutableArray<Expression> exprs)
     {
         Expression MapUnquote(ImmutableArray<Expression> acc, ImmutableArray<Expression> es) => es switch
         {
@@ -364,6 +367,16 @@ public class Interpreter
         if (exprs is [var e])
         {
             return new EvalContext(env, Unquote(e).AndThen(r => r is [var expression] ? expression : ListExpr(r)) );
+        }
+
+        throw SyntaxError("'quasiquote'", exprs);
+    }
+    
+    private static EvalContext Quote(Environment env, ImmutableArray<Expression> exprs)
+    {
+        if (exprs is [var e])
+        {
+            return new EvalContext(env, e);
         }
 
         throw SyntaxError("'quote'", exprs);
@@ -556,6 +569,8 @@ public class Interpreter
         { "cdr", new Function(Cdr) },
         { "cat", new Function(Cat) },
         { "quote", new Special(Quote) },
+        { "quasiquote", new Special(QuasiQuote) },
+        { "unquote", new Function(e => DummyExpr)},
         { "eval", new Special(Eval) },
         { "macro", new Special(Macro) },
         { "set!", new Special(Set) },
