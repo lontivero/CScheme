@@ -95,9 +95,8 @@ public class Interpreter
             [] => (acc, []),
         };
 
-    public static EvalContext Eval(Environment env, Expression expr)
-    {
-        return expr switch
+    public static EvalContext Eval(Environment env, Expression expr) =>
+        expr switch
         {
             Symbol sym => new EvalContext(env, Lookup(sym.Value, env)),
             List {Expressions: [var h, .. var t]} => Eval(env, h).AndThen(ctx => ctx.Expression switch
@@ -108,7 +107,6 @@ public class Interpreter
             }),
             var e => new EvalContext(env, e)
         };
-    }
 
     private static EvalContext Apply(Environment env, ExpressionsProcessor function, ImmutableArray<Expression> args)
     {
@@ -324,10 +322,12 @@ public class Interpreter
                 ImmutableArray<(Expression, Expression)> pargs) =>
                 pargs switch
                 {
+                    [(Symbol {Value: var p}, List a)] when pparameters is [.. _, Symbol("."), _] => 
+                        ListExpr(a.Expressions.Select(x => Eval(callerEnv, x).Expression).ToArray())
+                            .AndThen(ctx => MapBind(acc.Add((p, ctx)), [])),
                     [(Symbol {Value: var p}, var a), .. var t] => Eval(callerEnv, a)
                         .AndThen(ctx => MapBind(acc.Add((p, ctx.Expression)), t)),
                     [] => Eval(ExtendEnvironment(acc, env.SetItems(callerEnv)), WrapBegin(pbody)),
-                    //[] => Eval(ExtendEnvironment(acc, callerEnv.SetItems(env)), WrapBegin(pbody)),
                     _ => throw SyntaxError("'lambda' parameter.", args)
                 };
         }
