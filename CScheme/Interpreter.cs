@@ -99,9 +99,6 @@ public class Interpreter
     {
         return expr switch
         {
-            Number num => new EvalContext(env, num),
-            String str => new EvalContext(env, str),
-            Boolean b => new EvalContext(env, b),
             Symbol sym => new EvalContext(env, Lookup(sym.Value, env)),
             List {Expressions: [var h, .. var t]} => Eval(env, h).AndThen(ctx => ctx.Expression switch
             {
@@ -109,8 +106,7 @@ public class Interpreter
                 Special f => f.Fn(ctx.Environment, t),
                 _ => throw SyntaxError("The first element in a list must be a function", [expr, ctx.Expression])
             }),
-            DummyExpression s => throw new InvalidOperationException($"Cannot evaluate dummy value '{s.Val}'"),
-            var e => throw SyntaxError("Error", [e])
+            var e => new EvalContext(env, e)
         };
     }
 
