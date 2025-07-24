@@ -1,11 +1,11 @@
 (load "Prelude.scm")
 
-(define test (macro (expected expr)
+(define-macro (test expected expr)
   `(begin
     (newline)
     (display (if (equal? ,expected ,expr) "Passed " "!Failed \t"))
     (display (quote ,expr))
-    nil)))
+    nil))
 
 (test 8 ((lambda (x) (+ x x)) 4))
 
@@ -155,8 +155,6 @@
 
 (test #f (boolean? '()))
 
-
-
 (test '(a) (cons 'a '()))
 
 (test '((a) b c d) (cons '(a) '(b c d)))
@@ -181,7 +179,7 @@
 
 (test #t (list? '()))
 
-; (test #f (list? '(a . b)))
+(test #f (list? '(a . b)))
 
 
 ; (test #f
@@ -247,4 +245,17 @@
 
 (test #f (string? 'a))
 
+(letrec ((add (lambda (a b) (+ a b))))
+  (write (add 3 4))
+  (newline))
+
+(letrec ((even? (lambda (n) (if (zero? n) #t (odd? (- n 1)))))
+          (odd? (lambda (n) (if (zero? n) #f (even? (- n 1))))))
+  (write (even? 1000))
+  (newline)
+  (write (even? 1001))
+  (newline)
+  (write (odd? 1000))
+  (newline)
+  )
 (newline)

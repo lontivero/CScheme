@@ -22,10 +22,7 @@
     nil
     (cons (f (car xs)) (map f (cdr xs)))))
 
-; (define list (macro (xs) '(map eval (quote ,xs))))
-(define list (macro (xs) `(if (list? xs) (quote ,xs) (quote (,xs)))))
 (define-macro (list . xs) `(if (list? xs) (quote ,xs) (quote (,xs))))
-
 
 (define (append-two list1 list2)
   (cond

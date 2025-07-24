@@ -89,6 +89,7 @@ public class Interpreter
             [QuasiQuoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuasiQuoteExpr, MapTokenToExpression(h))), t),
             [UnquoteToken, OpenToken, .. var t] => ParseList(e => [UnquoteExpr, ListExpr(e)], t, acc),
             [UnquoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteExpr, MapTokenToExpression(h))), t),
+            [UnquoteSplicingToken, OpenToken, .. var t] => ParseList(e => [UnquoteSplicingExpr, ListExpr(e)], t, acc),
             [UnquoteSplicingToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteSplicingExpr, MapTokenToExpression(h))), t),
             [var h, .. var t] => Parse(acc.Add(MapTokenToExpression(h)), t),
             [] => (acc, []),
@@ -272,7 +273,7 @@ public class Interpreter
 
         EvalContext MapUpdate(Environment penv, ImmutableArray<Expression> bindings)
         {
-            EvalContext InternalMapUpdate(string s, Expression e, ImmutableArray<Expression> restBindings)
+            EvalContext InternalMapUpdate(Environment penv, string s, Expression e, ImmutableArray<Expression> restBindings)
             {
                 var (ppenv, expr) = Eval(penv, e);
                 var pppenv = ExtendEnvironment([(s, expr)], ppenv);
@@ -282,8 +283,8 @@ public class Interpreter
             return bindings switch
             {
                 [List {Expressions: [Symbol {Value: var s}, var e]}, .. var restBindings] =>
-                    InternalMapUpdate(s, e, restBindings),
-                [] => Eval(extendedEnv, WrapBegin(body)),
+                    InternalMapUpdate(penv, s, e, restBindings),
+                [] => Eval(penv, WrapBegin(body)),
                 _ => throw SyntaxError("'let' binding.", bindings)
             };
         }
@@ -329,7 +330,8 @@ public class Interpreter
                 {
                     [(Symbol {Value: var p}, var a), .. var t] => Eval(callerEnv, a)
                         .AndThen(ctx => MapBind(acc.Add((p, ctx.Expression)), t)),
-                    [] => Eval(ExtendEnvironment(acc, callerEnv.SetItems(env)), WrapBegin(pbody)),
+                    [] => Eval(ExtendEnvironment(acc, env.SetItems(callerEnv)), WrapBegin(pbody)),
+                    //[] => Eval(ExtendEnvironment(acc, callerEnv.SetItems(env)), WrapBegin(pbody)),
                     _ => throw SyntaxError("'lambda' parameter.", args)
                 };
         }
@@ -387,7 +389,7 @@ public class Interpreter
         EvalContext FoldEval(Environment penv, ImmutableArray<Expression> es, Expression last) => es switch
         {
             [var h, .. var t] => Eval(penv, h).AndThen(ctx => FoldEval(ctx.Environment, t, ctx.Expression)),
-            [] => new EvalContext(env, last)
+            [] => new EvalContext(penv, last)
         };
 
         return FoldEval(env, exprs, new DummyExpression("Empty 'begin'"));
