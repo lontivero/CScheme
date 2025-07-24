@@ -1,16 +1,16 @@
-﻿(define cond (macro (args)
-               (if (null? args)
+﻿(define-macro (cond h . t)
+               (if (null? h)
                   nil
                   (begin
-                    (define h (car args))
-                    (define t (cdr args))
+                    ;(define h (car args))
+                    ;(define t (cdr args))
                     (define test1 (if (equal? (car h) 'else) '#t (car h)))
                     (define expr1 (car (cdr h)))
-                    `(if ,test1 ,expr1 (cond ,t))))))
+                    `(if ,test1 ,expr1 (cond ,@t)))))
 
 ; logical 'and', 'or', 'not', 'xor'
-(define and (macro (a b) `(if ,a (if ,b #t #f) #f)))
-(define or (macro (a b) `(if ,a #t (if ,b #t #f))))
+(define-macro (and a b) `(if ,a (if ,b #t #f) #f))
+(define-macro (or a b) `(if ,a #t (if ,b #t #f)))
 (define (not? x) (if x #f #t))
 (define (xor a b) (and (or a b) (not? (and a b))))
 
@@ -24,6 +24,8 @@
 
 ; (define list (macro (xs) '(map eval (quote ,xs))))
 (define list (macro (xs) `(if (list? xs) (quote ,xs) (quote (,xs)))))
+(define-macro (list . xs) `(if (list? xs) (quote ,xs) (quote (,xs))))
+
 
 (define (append-two list1 list2)
   (cond
@@ -124,15 +126,14 @@
 (define second cadr)
 (define third caddr)
 
-(define while
-  (macro (test body)
+(define-macro (while test body)
     `(letrec
        ((loop
           (lambda ()
             (if ,test
               (begin ,body (loop))
               nil))))
-       (loop))))
+       (loop)))
 
 (define newline (lambda () (display "\r\n")))
 (define (write text) (display text))

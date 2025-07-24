@@ -130,7 +130,7 @@ public class Interpreter
         {
             List lst => $"({string.Join(" ", lst.Expressions.Select(Print))})",
             String str => str.Value,
-            Symbol sym => $"'{sym.Value}",
+            Symbol sym => sym.Value,
             Number num => num.Value.ToString(),
             Boolean b => b.Bool ? "#t" : "#f",
             Function or Special => "Function",
@@ -411,6 +411,32 @@ public class Interpreter
         };
     }
 
+    private static EvalContext DefineMacro(Environment env, ImmutableArray<Expression> exprs)
+    {
+        if (exprs is not [List { Expressions: [Symbol { Value : var sym}, ..var parameters] }, var body])
+        {
+            throw SyntaxError("'define-macro'", exprs);
+        }
+
+        var penv = ExtendEnvironment([(sym, new Special(Closure))], env);
+        return new EvalContext(penv, new DummyExpression($"Define Macro {sym}"));
+        
+        EvalContext Closure(Environment callerEnv, ImmutableArray<Expression> args)
+        {
+            (string, Expression) Bind((Expression, Expression Arg) t)
+            {
+                if (t is (Symbol {Value: var psym}, _))
+                {
+                    return (psym, t.Arg);
+                }
+
+                throw SyntaxError("macro parameters", args);
+            }
+            var penv = ExtendEnvironment(Zip(parameters, args).Select(Bind), callerEnv); 
+            return Eval(penv, body).AndThen(ctx => Eval(ctx.Environment, ctx.Expression));
+        }
+    }
+
     private static EvalContext Set(Environment env, ImmutableArray<Expression> exprs) =>
         exprs switch
         {
@@ -426,30 +452,6 @@ public class Interpreter
             [var args] => Eval(env, args).AndThen(ctx => Eval(ctx.Environment, ctx.Expression)),
             [] => throw SyntaxError("'eval'", exprs)
         };
-
-    private static EvalContext Macro(Environment env, ImmutableArray<Expression> exprs)
-    {
-        if (exprs is not [List {Expressions: var parameters}, var body])
-        {
-            throw SyntaxError("'macro'", exprs);
-        }
-
-        EvalContext Closure(Environment callerEnv, ImmutableArray<Expression> args)
-        {
-            (string, Expression) Bind((Expression, Expression Arg) t)
-            {
-                if (t is (Symbol {Value: var psym}, _))
-                {
-                    return (psym, t.Arg);
-                }
-
-                throw SyntaxError("macro parameters", args);
-            }
-            var penv = ExtendEnvironment(Zip(parameters, args).Select(Bind), callerEnv); 
-            return Eval(penv, body).AndThen(ctx => Eval(ctx.Environment, ctx.Expression));
-        }
-        return new EvalContext(env, new Special(Closure));
-    }
 
     private static Expression NullQm(ImmutableArray<Expression> es) =>
         es is [List {Expressions.Length: 0}] ? True : False;
@@ -572,7 +574,7 @@ public class Interpreter
         { "quasiquote", new Special(QuasiQuote) },
         { "unquote", new Function(e => DummyExpr)},
         { "eval", new Special(Eval) },
-        { "macro", new Special(Macro) },
+        { "define-macro", new Special(DefineMacro) },
         { "set!", new Special(Set) },
         { "begin", new Special(Begin) },
         { "define", new Special(Define) },
@@ -586,10 +588,21 @@ public class Interpreter
         { "not", new Function(e => e is [Boolean { Bool: false }] ? True : False)}
     }.ToImmutableDictionary();
 
-    private static IEnumerable<(Expression, Expression)> Zip(ImmutableArray<Expression> ps, ImmutableArray<Expression> args) =>
-        ps.Zip(ps.Length == args.Length
-            ? args
-            : args[..(ps.Length - 1)].Add(ListExpr(args[(ps.Length - 1)..])));
+    private static IEnumerable<(Expression, Expression)> Zip(ImmutableArray<Expression> ps,
+        ImmutableArray<Expression> args)
+    {
+        return ZipDotted([], ps, args);
+
+        ImmutableArray<(Expression, Expression)> ZipDotted(ImmutableArray<(Expression, Expression)> acc,
+            ImmutableArray<Expression> pps, ImmutableArray<Expression> pas) =>
+            (pps, pas) switch
+            {
+                ([Symbol("."), Symbol p, ..], var tas) => acc.Add((p, ListExpr(tas))),
+                ([Symbol p, .. var tps], [var a, .. var tas]) => acc.Add((p, a)).AndThen(a => ZipDotted(a, tps, tas)),
+                ([],[]) => acc,
+                _ => throw SyntaxError($"{ps.Length} parameters were expected but {args.Length} were passed.", ps)
+            };
+    }
 
     private static SyntaxException SyntaxError(string msg, ImmutableArray<Expression> e) =>
         new($"[Syntax error] {msg} {Print(ListExpr(e))}");
