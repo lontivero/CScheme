@@ -1,9 +1,18 @@
+using System.Reflection;
 using System.Text;
 using CScheme;
 using static CScheme.Interpreter;
 using Environment = System.Collections.Immutable.ImmutableDictionary<string, CScheme.Expression>;
 
 var (env, _) = Load(Env, "Tests.scm");
+env = DefineNativeFunction("now", () => DateTime.Now, env);
+var httpClient = new HttpClient();
+env = DefineNativeFunction<string>("http-get", uri => httpClient.GetStringAsync(uri).GetAwaiter().GetResult(), env);
+env = DefineNativeFunction<string, object>("__get", (method, instance) =>
+            instance.GetType()
+                .InvokeMember(method, 
+                    BindingFlags.GetProperty | BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase, null, instance, [])!, env);
+
 Console.WriteLine("Welcome to CScheme");
 Repl(env);
 
@@ -90,6 +99,7 @@ public class ConsoleInputReader
                     {
                         history.Add(result);
                     }
+                    historyIndex = history.Count;
                     
                     return result;
                 }
