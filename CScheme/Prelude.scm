@@ -8,9 +8,18 @@
                     (define expr1 (car (cdr h)))
                     `(if ,test1 ,expr1 (cond ,@t)))))
 
+; (define-macro  (let* bindings . body)
+;   (if (null? bindings) 
+;     `((lambda () ,body))
+;     `(let (,(car bindings))
+;        (let* ,(cdr bindings) ,body))))
+
 ; logical 'and', 'or', 'not', 'xor'
-(define-macro (and a b) `(if ,a (if ,b #t #f) #f))
-(define-macro (or a b) `(if ,a #t (if ,b #t #f)))
+(define (all . xs)(not (member? #f xs)))
+(define (any . xs)(member? #t xs))
+
+(define-macro (and . xs) `(all ,@xs))
+(define-macro (or . xs) `(any ,@xs))
 (define (not? x) (if x #f #t))
 (define (xor a b) (and (or a b) (not? (and a b))))
 
@@ -22,7 +31,7 @@
     nil
     (cons (f (car xs)) (map f (cdr xs)))))
 
-(define-macro (list . xs) `(if (list? xs) (quote ,xs) (quote (,xs))))
+(define (list . xs) xs)
 
 (define (append-two list1 list2)
   (cond
@@ -31,14 +40,14 @@
       (cons (car list1)
         (append-two (cdr list1) list2)))))
 
-(define (append lists)
+(define (append . lists)
   (cond
     ((null? lists) '())
     ((null? (cdr lists)) (car lists))
     (else
       (let ((h (car lists))
             (t (append (cdr lists))))
-        (append-two h t)))))
+        (append-two h `,@t)))))
 
 (define (list-ref lst n)
   (cond

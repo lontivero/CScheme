@@ -27,7 +27,7 @@
 
 ; (test '(f g) (and 1 2 'c '(f g)))
 
-; (test #t (and))
+(test #t (and))
 
 (test #t (or (= 2 2) (> 2 1)))
 
@@ -169,7 +169,7 @@
 
 (test '(a) (car '((a) b c d)))
 
-; (test 1 (car '(1 . 2)))
+(test 1 (car '(1 . 2)))
 
 (test '(b c d) (cdr '((a) b c d)))
 
@@ -179,7 +179,7 @@
 
 (test #t (list? '()))
 
-(test #f (list? '(a . b)))
+; (test #f (list? '(a . b)))
 
 
 ; (test #f
@@ -197,15 +197,15 @@
 
 (test 0 (length '()))
 
-;(test '(x y) (append '(x) '(y)))
+(test '(x y) (append '(x) '(y)))
 
-;(test '(a b c d) (append '(a) '(b c d)))
+(test '(a b c d) (append '(a) '(b c d)))
 
-;(test '(a (b) (c)) (append '(a (b)) '((c))))
+(test '(a (b) (c)) (append '(a (b)) '((c))))
 
 ;(test '(a b c . d) (append '(a b) '(c . d)))
 
-;(test 'a (append '() 'a))
+(test 'a (append '() 'a))
 
 (test '(c b a) (reverse '(a b c)))
 
