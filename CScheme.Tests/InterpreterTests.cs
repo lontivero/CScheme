@@ -93,7 +93,7 @@ public class InterpreterTests
     public void SimplestTests(string program, string expectedResult, string comment)
     {
         var (env, _) = Interpreter.Load(Interpreter.Env, "Prelude.scm");
-        var (parsingResult, _) = Interpreter.Parse([], Tokenizer.Tokenize(program).ToArray());
+        var parsingResult = Interpreter.Parse(Tokenizer.Tokenize(program).ToArray());
         var result = Interpreter.Eval(env, parsingResult[0]); 
         Assert.Equal(expectedResult, Interpreter.Print(result.Expression));
     }
@@ -105,7 +105,7 @@ public class InterpreterTests
     [InlineData("(+ 10 2 3)", "15" , "addition")]
     public void XSimplestTests(string program, string expectedResult, string comment)
     {
-        var (parsingResult, _) = Interpreter.Parse([], Tokenizer.Tokenize(program).ToArray());
+        var parsingResult = Interpreter.Parse(Tokenizer.Tokenize(program).ToArray());
         var result = Interpreter.Eval(Interpreter.Env, parsingResult[0]); 
         Assert.Equal(expectedResult, Interpreter.Print(result.Expression));
     }

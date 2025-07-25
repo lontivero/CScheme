@@ -29,7 +29,7 @@ static void Repl(Environment env)
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
             {
-                var (parsingResult, _) = Parse([], Tokenizer.Tokenize(line).ToArray());
+                var parsingResult = Parse(Tokenizer.Tokenize(line).ToArray());
                 var (penv1, expressionResult) = Eval(env, parsingResult[0]);
                 var (penv, result) = ((Environment Env, string Result)) (penv: penv1, Print(expressionResult));
                 if (!string.IsNullOrWhiteSpace(result))

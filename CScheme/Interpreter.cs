@@ -56,7 +56,7 @@ public class Interpreter
     private static readonly Boolean True = new(true);
     private static readonly Boolean False = new(false);
     private static readonly DummyExpression DummyExpr = new("dummy for letrec");
-    private static List ListExpr(params Expression[] exprs) => new([..exprs]);
+    
     private static List ListExpr(ImmutableArray<Expression> exprs) => new(exprs);
 
     private static Expression MapTokenToExpression(Token token) =>
@@ -69,31 +69,50 @@ public class Interpreter
             _ => throw new SyntaxException($"token '{token}' is not a mappeable to an expression.")
         };
 
-    private static (ImmutableArray<Expression>, Token[] rest) ParseList(
-        Func<ImmutableArray<Expression>, ImmutableArray<Expression>> fn,
-        Token[] rest, ImmutableArray<Expression> acc)
+    public static ImmutableArray<Expression> Parse(Token[] tokens)
     {
-        var (exprs, rest2) = Parse([], rest);
-        return fn(exprs).AndThen(ListExpr).AndThen(acc.Add).AndThen(pacc => Parse(pacc, rest2));
-    }
-
-    public static (ImmutableArray<Expression>, Token[] rest) Parse(ImmutableArray<Expression> acc, Token[] tokens) =>
-        tokens switch
+        var expressions = new List<Expression>();
+        while (tokens.Length > 0)
         {
-            [OpenToken, .. var t] => ParseList(e => e, t, acc),
-            [CloseToken, .. var t] => (acc, t),
-            [QuoteToken, OpenToken, .. var t] =>  ParseList(e => [QuoteExpr, ListExpr(e)], t, acc),
-            [QuoteToken, UnquoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuoteExpr, ListExpr(UnquoteExpr, MapTokenToExpression(h)))), t),
-            [QuoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuoteExpr, MapTokenToExpression(h))), t),
-            [QuasiQuoteToken, OpenToken, .. var t] =>  ParseList(e => [QuasiQuoteExpr, ListExpr(e)], t, acc),
-            [QuasiQuoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(QuasiQuoteExpr, MapTokenToExpression(h))), t),
-            [UnquoteToken, OpenToken, .. var t] => ParseList(e => [UnquoteExpr, ListExpr(e)], t, acc),
-            [UnquoteToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteExpr, MapTokenToExpression(h))), t),
-            [UnquoteSplicingToken, OpenToken, .. var t] => ParseList(e => [UnquoteSplicingExpr, ListExpr(e)], t, acc),
-            [UnquoteSplicingToken, var h, .. var t] => Parse(acc.Add(ListExpr(UnquoteSplicingExpr, MapTokenToExpression(h))), t),
-            [var h, .. var t] => Parse(acc.Add(MapTokenToExpression(h)), t),
-            [] => (acc, []),
-        };
+            var x = ParseExpression(tokens);
+            expressions.Add(x.ParsedExpression);
+            tokens = x.UnparsedTokens;
+        }
+        
+        return [..expressions];
+        
+        static (Expression, Token[] rest) ParseList(Token[] tokens)
+        {
+            (ImmutableArray<Expression>, Token[]) ParseListElements(ImmutableArray<Expression> acc, Token[] tokens) =>
+                tokens switch
+                {
+                    [CloseToken, .. var t] => (acc, t),
+                    _ => ParseExpression(tokens)
+                        .AndThen(r => (acc.Add(r.ParsedExpression), rest: r.UnparsedTokens))
+                        .AndThen(r => ParseListElements(r.Item1, r.rest))
+                };
+
+            var (elements, unparsedTokens) = ParseListElements([], tokens);
+            return (ListExpr(elements), unparsedTokens);
+        }
+
+        static (Expression ParsedExpression, Token[] UnparsedTokens) ParseExpression(Token[] tokens) =>
+            tokens switch
+            {
+                [OpenToken, .. var t] => ParseList(t),
+                [QuoteToken, .. var t] => ParseExpression(t).AndThen(r =>
+                    (ListExpr([QuoteExpr, r.ParsedExpression]), rest: r.UnparsedTokens)),
+                [QuasiQuoteToken, .. var t] => ParseExpression(t).AndThen(r =>
+                    (ListExpr([QuasiQuoteExpr, r.ParsedExpression]), rest: r.UnparsedTokens)),
+                [UnquoteToken, .. var t] => ParseExpression(t).AndThen(r =>
+                    (ListExpr([UnquoteExpr, r.ParsedExpression]), rest: r.UnparsedTokens)),
+                [UnquoteSplicingToken, .. var t] => ParseExpression(t).AndThen(r =>
+                    (ListExpr([UnquoteSplicingExpr, r.ParsedExpression]), rest: r.UnparsedTokens)),
+                [var h, .. var t] => (MapTokenToExpression(h), t),
+                // [] => ????
+            };
+    }
+    
 
     public static EvalContext Eval(Environment env, Expression expr) =>
         expr switch
@@ -332,7 +351,7 @@ public class Interpreter
                 pargs switch
                 {
                     [(Symbol {Value: var p}, List a)] when pparameters is [.. _, Symbol("."), _] => 
-                        ListExpr(a.Expressions.Select(x => Eval(callerEnv, x).Expression).ToArray())
+                        ListExpr(a.Expressions.Select(x => Eval(callerEnv, x).Expression).ToImmutableArray())
                             .AndThen(ctx => MapBind(acc.Add((p, ctx)), [])),
                     [(Symbol {Value: var p}, var a), .. var t] => Eval(callerEnv, a)
                         .AndThen(ctx => MapBind(acc.Add((p, ctx.Expression)), t)),
@@ -413,7 +432,7 @@ public class Interpreter
         {
             [Symbol {Value: var sym}, var e] => InternalDefine(sym, e),
             [List { Expressions: [Symbol { Value: var sym }, .. var ps]}, .. var body] => 
-                InternalDefine(sym, ListExpr(new Symbol("lambda"), ListExpr(ps), WrapBegin(body))),
+                InternalDefine(sym, ListExpr([new Symbol("lambda"), ListExpr(ps), WrapBegin(body)])),
             [] => throw SyntaxError("'Define'", exprs)
         };
     }
@@ -482,7 +501,7 @@ public class Interpreter
         }
 
         var tokens = Tokenize(File.OpenText(filename).ReadToEnd());
-        var (parsingResults, _) = Parse([], tokens.ToArray());
+        var parsingResults = Parse(tokens.ToArray());
         foreach (var result in parsingResults)
         {
             (env, _) = Eval(env, result);
