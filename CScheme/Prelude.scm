@@ -94,7 +94,7 @@
 (define (member? item lst)
   (if (null? lst)
       #f
-      (if (= item (car lst))
+      (if (equal? item (car lst))
           #t
           (member? item (cdr lst)))))
 

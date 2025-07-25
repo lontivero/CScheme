@@ -151,15 +151,26 @@ public class Interpreter
             _ => throw SyntaxError("Binary comparison requires two expressions", es)
         };
 
-    private static ExpressionsProcessor CompareEquality =>
+    private static ExpressionsProcessor NumericEquality =>
         es => es switch
         {
             [Number a, Number b] => a.Value == b.Value ? True : False,
-            [String a, String b] => a.Value == b.Value ? True : False,
-            [Boolean a, Boolean b] => a.Bool == b.Bool ? True : False,
             _ => throw SyntaxError("Binary comparison requires two expressions", es)
         };
 
+    private static ExpressionsProcessor IdentityEquality =>
+        es => es switch
+        {
+            [Symbol a, Symbol b] => a.Value == b.Value ? True : False,
+            [Number a, Number b] => a.Value == b.Value ? True : False,
+            [String a, String b] =>  a.Value == b.Value ? True : False,
+            [Boolean a, Boolean b] => a.Bool == b.Bool ? True : False,
+            [List a, List b] => a.Expressions == b.Expressions ? True : False,
+            [Function a, Function b] => ReferenceEquals(a.Fn, b.Fn) ? True : False,
+            [Special a, Special b] => ReferenceEquals(a.Fn, b.Fn) ? True : False,
+            _ => throw SyntaxError("Binary comparison requires two expressions", es)
+        };
+    
     private static ExpressionsProcessor CompareStructuralEquality =>
         es => es switch
         {
@@ -183,8 +194,6 @@ public class Interpreter
     private static readonly ExpressionsProcessor Divide = Math(1L, 1L, (a, b) => a / b);
     private static readonly ExpressionsProcessor Modulus = Math(1L, 1L, (a, b) => a % b);
 
-    private static readonly ExpressionsProcessor Equal = CompareEquality;
-    private static readonly ExpressionsProcessor StructuralEqual = CompareStructuralEquality;
     private static readonly ExpressionsProcessor Greater = Compare((a, b) => a > b);
     private static readonly ExpressionsProcessor Less = Compare((a, b) => a < b);
 
@@ -553,9 +562,9 @@ public class Interpreter
         { "%", new Function(Modulus) },
         { "+", new Function(Add) },
         { "-", new Function(Subtract) },
-        { "=", new Function(Equal) },
-        { "eq?", new Function(StructuralEqual) },
-        { "equal?", new Function(StructuralEqual) },
+        { "=", new Function(NumericEquality) },
+        { "eq?", new Function(IdentityEquality) },
+        { "equal?", new Function(CompareStructuralEquality) },
         { ">", new Function(Greater) },
         { "<", new Function(Less) },
         { "null?", new Function(NullQm) },
