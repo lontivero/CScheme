@@ -244,6 +244,7 @@ public class Interpreter
         es switch
         {
             [{ } es1, List {Expressions: var es2}] => ListExpr(es2.Insert(0, es1)),
+            [{ } es1, var es2] => ListExpr([es1, es2]),
             _ => throw SyntaxError("'list'", es)
         };
 
@@ -272,7 +273,8 @@ public class Interpreter
 
         return exprs switch
         {
-            [List {Expressions: var bindings}, .. var body] => MapBind([], bindings, WrapBegin(body)),
+            [List {Expressions: var bindings}, .. var body] => MapBind([], bindings, WrapBegin(body))
+                .AndThen(ctx => ctx with {Environment = env}),
             _ => throw SyntaxError("'let' must have bindings and a body expression.", exprs)
         };
     }
@@ -306,7 +308,7 @@ public class Interpreter
             {
                 [List {Expressions: [Symbol {Value: var s}, var e]}, .. var restBindings] =>
                     InternalMapUpdate(penv, s, e, restBindings),
-                [] => Eval(penv, WrapBegin(body)),
+                [] => Eval(penv, WrapBegin(body)).AndThen(ctx => ctx with {Environment = env}),
                 _ => throw SyntaxError("'let' binding.", bindings)
             };
         }
@@ -326,7 +328,8 @@ public class Interpreter
 
         return exprs switch
         {
-            [List {Expressions: var bindings}, .. var body] => FoldBind(env, bindings, body),
+            [List {Expressions: var bindings}, .. var body] =>  FoldBind(env, bindings, body)
+                .AndThen(ctx => ctx with {Environment = env}),
             _ => throw SyntaxError("'let*' must have bindings and a body expression.", exprs)
         };
     }
