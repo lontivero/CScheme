@@ -15,15 +15,10 @@ public record EvalContext(Environment Environment, Expression Expression);
 
 public class Interpreter
 {
-    private static Expression Lookup(string symbol, Environment env)
-    {
-        if (env.TryGetValue(symbol, out var value))
-        {
-            return value;
-        }
-
-        throw new InvalidOperationException($"No binding for '{symbol}'.");
-    }
+    private static Expression Lookup(string symbol, Environment env) =>
+        env.TryGetValue(symbol, out var value) 
+            ? value
+            : throw new InvalidOperationException($"No binding for '{symbol}'.");
 
     private static Environment ExtendEnvironment(IEnumerable<(string s, Expression e)> bindings, Environment env) =>
         env.SetItems(bindings.Select(x => KeyValuePair.Create(x.s, x.e)));
@@ -45,7 +40,7 @@ public class Interpreter
 
     private record Special(SpecialExpressionsProcessor Fn) : Expression;
 
-    public record NativeObject(object Value) : Expression;
+    private record NativeObject(object Value) : Expression;
 
     private record DummyExpression(string Val) : Expression;
 
@@ -109,7 +104,6 @@ public class Interpreter
                 [UnquoteSplicingToken, .. var t] => ParseExpression(t).AndThen(r =>
                     (ListExpr([UnquoteSplicingExpr, r.ParsedExpression]), rest: r.UnparsedTokens)),
                 [var h, .. var t] => (MapTokenToExpression(h), t),
-                // [] => ????
             };
     }
     
@@ -127,17 +121,9 @@ public class Interpreter
             var e => new EvalContext(env, e)
         };
 
-    private static EvalContext Apply(Environment env, ExpressionsProcessor function, ImmutableArray<Expression> args)
-    {
-        Expression MapEval(ImmutableArray<Expression> acc, ImmutableArray<Expression> args) =>
-            args switch
-            {
-                [var h, .. var t] => Eval(env, h).AndThen(ctx => MapEval(acc.Add(ctx.Expression), t)),
-                [] => function(acc)
-            };
-
-        return new EvalContext(env, MapEval([], args));
-    }
+    private static EvalContext Apply(Environment env, ExpressionsProcessor function, ImmutableArray<Expression> args) =>
+        Fold(ImmutableArray<Expression>.Empty, (acc, e) => acc.Add(Eval(env, e).Expression), args)
+            .AndThen(ars => new EvalContext(env, function(ars)));
 
     public static string Print(Expression expr) =>
         expr switch
@@ -164,18 +150,14 @@ public class Interpreter
         };
 
     private static ExpressionsProcessor Compare(Func<long, long, bool> op) =>
-        es => es switch
-        {
-            [Number a, Number b] => op(a.Value, b.Value) ? True : False,
-            _ => throw SyntaxError("Binary comparison requires two expressions", es)
-        };
+        es => es is [Number a, Number b]
+            ? op(a.Value, b.Value) ? True : False
+            : throw SyntaxError("Binary comparison requires two expressions", es);
 
     private static ExpressionsProcessor NumericEquality =>
-        es => es switch
-        {
-            [Number a, Number b] => a.Value == b.Value ? True : False,
-            _ => throw SyntaxError("Binary comparison requires two expressions", es)
-        };
+        es => es is [Number a, Number b] 
+            ? a.Value == b.Value ? True : False
+            : throw SyntaxError("Binary comparison requires two expressions", es);
 
     private static ExpressionsProcessor IdentityEquality =>
         es => es switch
@@ -217,28 +199,10 @@ public class Interpreter
     private static readonly ExpressionsProcessor Less = Compare((a, b) => a < b);
 
     private static Expression Car(ImmutableArray<Expression> es) =>
-        es switch
-        {
-            [List {Expressions: [var e, .. _]}] => e,
-            _ => throw SyntaxError("'car'", es)
-        };
+        es is [List {Expressions: [var e, .. _]}] ? e : throw SyntaxError("'car'", es);
 
-    private static Expression Cdr(ImmutableArray<Expression> es) => 
-        es switch
-        {
-            [List {Expressions: [_, .. var t]}] => ListExpr(t),
-            _ => throw SyntaxError("'cdr'", es)
-        };
-
-    private static Expression Cat(ImmutableArray<Expression> es)
-    {
-        if (es.All(e => e is List))
-        {
-            return ListExpr(es.Cast<List>().SelectMany(x => x.Expressions).ToImmutableArray());
-        }
-
-        throw SyntaxError("'cdr'", es);
-    }
+    private static Expression Cdr(ImmutableArray<Expression> es) =>
+        es is [List {Expressions: [_, .. var t]}] ? ListExpr(t) : throw SyntaxError("'cdr'", es);
 
     private static Expression Cons(ImmutableArray<Expression> es) =>
         es switch
@@ -261,22 +225,17 @@ public class Interpreter
 
     private static EvalContext Let(Environment env, ImmutableArray<Expression> exprs)
     {
-        EvalContext MapBind(ImmutableArray<(string, Expression)> acc, ImmutableArray<Expression> bindings,
-            Expression body) =>
-            bindings switch
-            {
-                [List {Expressions: [Symbol {Value: var s}, var e]}, .. var restBindings] =>
-                    Eval(env, e).AndThen(ctx => MapBind(acc.Add((s, ctx.Expression)), restBindings, body)),
-                [] => Eval(ExtendEnvironment(acc, env), body),
-                _ => throw SyntaxError("'let' binding.", bindings)
-            };
-
-        return exprs switch
+        if(exprs is not [List {Expressions: var bindings}, .. var body])
         {
-            [List {Expressions: var bindings}, .. var body] => MapBind([], bindings, WrapBegin(body))
-                .AndThen(ctx => ctx with {Environment = env}),
-            _ => throw SyntaxError("'let' must have bindings and a body expression.", exprs)
-        };
+            throw SyntaxError("'let' must have bindings and a body expression.", exprs);
+        }
+
+        return Eval(Fold(env, Bind, bindings), WrapBegin(body)) with{ Environment = env };
+
+        Environment Bind(Environment penv, Expression pexpr) =>
+            pexpr is List { Expressions: [Symbol {Value: var s}, var e] }
+                ? Eval(env, e).AndThen(r => ExtendEnvironment([(s, r.Expression)], penv))
+                : throw SyntaxError("'let' binding.", bindings);
     }
 
     private static EvalContext LetRec(Environment env, ImmutableArray<Expression> exprs)
@@ -286,52 +245,27 @@ public class Interpreter
             throw SyntaxError("'let' must have bindings and a body expression.", exprs);
         }
 
-        var extendedEnv = ExtendEnvironment(bindings.Select(Bind), env);
-        return MapUpdate(extendedEnv, bindings);
+        return Eval(Fold(env, Bind, bindings), WrapBegin(body)) with{ Environment = env };
 
-        static (string, Expression) Bind(Expression e) => e switch
-        {
-            List {Expressions: [Symbol {Value: var s}, _]} => (s, DummyExpr),
-            _ => throw SyntaxError("'letrec' binding", [e])
-        };
-
-        EvalContext MapUpdate(Environment penv, ImmutableArray<Expression> bindings)
-        {
-            EvalContext InternalMapUpdate(Environment penv, string s, Expression e, ImmutableArray<Expression> restBindings)
-            {
-                var (ppenv, expr) = Eval(penv, e);
-                var pppenv = ExtendEnvironment([(s, expr)], ppenv);
-                return MapUpdate(pppenv, restBindings);
-            }
-
-            return bindings switch
-            {
-                [List {Expressions: [Symbol {Value: var s}, var e]}, .. var restBindings] =>
-                    InternalMapUpdate(penv, s, e, restBindings),
-                [] => Eval(penv, WrapBegin(body)).AndThen(ctx => ctx with {Environment = env}),
-                _ => throw SyntaxError("'let' binding.", bindings)
-            };
-        }
+        Environment Bind(Environment penv, Expression pexpr) =>
+            pexpr is List { Expressions: [ Symbol {Value: var sym}, var e ] }
+                ? Eval(penv, e).AndThen(r => ExtendEnvironment([(sym, r.Expression)], r.Environment))
+                : throw SyntaxError("'let' binding.", [pexpr]);
     }
 
     private static EvalContext LetStar(Environment env, ImmutableArray<Expression> exprs)
     {
-        EvalContext FoldBind(Environment penv, ImmutableArray<Expression> bindings, ImmutableArray<Expression> body) =>
-            bindings switch
-            {
-                [List {Expressions: [Symbol {Value: var s}, var e]}, .. var restBindings] =>
-                    Eval(penv, e).AndThen(ctx =>
-                        FoldBind(ExtendEnvironment([(s, ctx.Expression)], ctx.Environment), restBindings, body)), // TODO: check what environment to use
-                [] => Eval(penv, WrapBegin(body)),
-                _ => throw SyntaxError("'let*' binding.", bindings)
-            };
-
-        return exprs switch
+        if (exprs is not [List {Expressions: var bindings}, .. var body])
         {
-            [List {Expressions: var bindings}, .. var body] =>  FoldBind(env, bindings, body)
-                .AndThen(ctx => ctx with {Environment = env}),
-            _ => throw SyntaxError("'let*' must have bindings and a body expression.", exprs)
-        };
+            throw SyntaxError("'let*' must have bindings and a body expression.", exprs);
+        }
+
+        return Eval(Fold(env, Bind, bindings), WrapBegin(body)) with{ Environment = env };
+        
+        Environment Bind(Environment penv, Expression bind) =>
+            bind is List {Expressions: [Symbol {Value: var sym}, var e]}
+                ? ExtendEnvironment([(sym, Eval(penv, e).Expression)], penv)
+                : throw SyntaxError("'let*' binding.", [bind]);
     }
 
     private static EvalContext Lambda(Environment env, ImmutableArray<Expression> expr)
@@ -347,18 +281,19 @@ public class Interpreter
 
         EvalContext Closure(Environment callerEnv, ImmutableArray<Expression> args)
         {
-            return MapBind([], [..Zip(pparameters, args)]);
+            env = env.SetItems(callerEnv);
+            
+            var bindings = Zip(pparameters, args);
+            return Eval(Fold(env, Bind, bindings), WrapBegin(pbody));
 
-            EvalContext MapBind(ImmutableArray<(string, Expression)> acc,
-                ImmutableArray<(Expression, Expression)> pargs) =>
-                pargs switch
+            Environment Bind(Environment penv, (Expression, Expression, bool) parg) =>
+                parg switch
                 {
-                    [(Symbol {Value: var p}, List a)] when pparameters is [.. _, Symbol("."), _] => 
-                        ListExpr(a.Expressions.Select(x => Eval(callerEnv, x).Expression).ToImmutableArray())
-                            .AndThen(ctx => MapBind(acc.Add((p, ctx)), [])),
-                    [(Symbol {Value: var p}, var a), .. var t] => Eval(callerEnv, a)
-                        .AndThen(ctx => MapBind(acc.Add((p, ctx.Expression)), t)),
-                    [] => Eval(ExtendEnvironment(acc, env.SetItems(callerEnv)), WrapBegin(pbody)),
+                    (Symbol {Value: var p}, List a, true) => 
+                        a.Expressions.Select(x => Eval(callerEnv, x).Expression)
+                            .AndThen(es => ExtendEnvironment([(p, ListExpr([..es]))], penv)),
+                    (Symbol {Value: var p}, var a, _) => Eval(callerEnv, a)
+                        .AndThen(e => ExtendEnvironment([(p, e.Expression)], penv)),
                     _ => throw SyntaxError("'lambda' parameter.", args)
                 };
         }
@@ -411,26 +346,11 @@ public class Interpreter
         throw SyntaxError("'quote'", exprs);
     }
 
-    private static EvalContext Begin(Environment env, ImmutableArray<Expression> exprs)
-    {
-        EvalContext FoldEval(Environment penv, ImmutableArray<Expression> es, Expression last) => es switch
-        {
-            [var h, .. var t] => Eval(penv, h).AndThen(ctx => FoldEval(ctx.Environment, t, ctx.Expression)),
-            [] => new EvalContext(penv, last)
-        };
-
-        return FoldEval(env, exprs, new DummyExpression("Empty 'begin'"));
-    }
+    private static EvalContext Begin(Environment env, ImmutableArray<Expression> exprs) =>
+        Fold(new EvalContext(env, DummyExpr), (ctx, e) => Eval(ctx.Environment, e), exprs);
 
     private static EvalContext Define(Environment env, ImmutableArray<Expression> exprs)
     {
-        EvalContext InternalDefine(string sym, Expression e)
-        {
-            var (penv, pe) = Eval(env, e);
-            var ppenv = ExtendEnvironment([(sym, pe)], penv);
-            return new EvalContext(ppenv, new DummyExpression($"Define {sym}"));
-        }
-
         return exprs switch
         {
             [Symbol {Value: var sym}, var e] => InternalDefine(sym, e),
@@ -438,6 +358,13 @@ public class Interpreter
                 InternalDefine(sym, ListExpr([new Symbol("lambda"), ListExpr(ps), WrapBegin(body)])),
             [] => throw SyntaxError("'Define'", exprs)
         };
+
+        EvalContext InternalDefine(string sym, Expression e)
+        {
+            var (penv, pe) = Eval(env, e);
+            var ppenv = ExtendEnvironment([(sym, pe)], penv);
+            return new EvalContext(ppenv, new DummyExpression($"Define {sym}"));
+        }
     }
 
     private static EvalContext DefineMacro(Environment env, ImmutableArray<Expression> exprs)
@@ -452,35 +379,28 @@ public class Interpreter
         
         EvalContext Closure(Environment callerEnv, ImmutableArray<Expression> args)
         {
-            (string, Expression) Bind((Expression, Expression Arg) t)
-            {
-                if (t is (Symbol {Value: var psym}, _))
-                {
-                    return (psym, t.Arg);
-                }
+            var binding = Zip(parameters, args);
+            return Eval(Fold(callerEnv, Bind, binding), body)
+                .AndThen(ctx => Eval(ctx.Environment, ctx.Expression));
 
-                throw SyntaxError("macro parameters", args);
-            }
-            var penv = ExtendEnvironment(Zip(parameters, args).Select(Bind), callerEnv); 
-            return Eval(penv, body).AndThen(ctx => Eval(ctx.Environment, ctx.Expression));
+            Environment Bind(Environment penv, (Expression psym, Expression pexpr, bool _) map) =>
+                map.psym is Symbol {Value: var s}
+                    ? ExtendEnvironment([(s, map.pexpr)], penv)
+                    : throw SyntaxError("'macro' parameter.", [map.pexpr]);
         }
     }
 
     private static EvalContext Set(Environment env, ImmutableArray<Expression> exprs) =>
-        exprs switch
-        {
-            [Symbol {Value: var sym}, var e] => Eval(env, e).AndThen(ctx =>
+        exprs is [Symbol {Value: var sym}, var e]
+            ? Eval(env, e).AndThen(ctx =>
                 // set! is dangerous because it alters the bindings table. Should I remove it???
-                new EvalContext(env.SetItem(sym, ctx.Expression), new DummyExpression($"Set {sym}"))),
-            _ => throw SyntaxError("set!", exprs)
-        };
+                new EvalContext(env.SetItem(sym, ctx.Expression), new DummyExpression($"Set {sym}")))
+            : throw SyntaxError("set!", exprs);
 
     private static EvalContext Eval(Environment env, ImmutableArray<Expression> exprs) =>
-        exprs switch
-        {
-            [var args] => Eval(env, args).AndThen(ctx => Eval(ctx.Environment, ctx.Expression)),
-            [] => throw SyntaxError("'eval'", exprs)
-        };
+        exprs is [var args]
+            ? Eval(env, args).AndThen(ctx => Eval(ctx.Environment, ctx.Expression))
+            : throw SyntaxError("'eval'", exprs);
 
     private static Expression NullQm(ImmutableArray<Expression> es) =>
         es is [List {Expressions.Length: 0}] ? True : False;
@@ -598,7 +518,6 @@ public class Interpreter
         { "cons", new Function(Cons) },
         { "car", new Function(Car) },
         { "cdr", new Function(Cdr) },
-        { "cat", new Function(Cat) },
         { "quote", new Special(Quote) },
         { "quasiquote", new Special(QuasiQuote) },
         { "unquote", new Function(e => DummyExpr)},
@@ -617,17 +536,17 @@ public class Interpreter
         { "not", new Function(e => e is [Boolean { Bool: false }] ? True : False)}
     }.ToImmutableDictionary();
 
-    private static IEnumerable<(Expression, Expression)> Zip(ImmutableArray<Expression> ps,
+    private static IEnumerable<(Expression, Expression, bool)> Zip(ImmutableArray<Expression> ps,
         ImmutableArray<Expression> args)
     {
         return ZipDotted([], ps, args);
 
-        ImmutableArray<(Expression, Expression)> ZipDotted(ImmutableArray<(Expression, Expression)> acc,
+        ImmutableArray<(Expression, Expression, bool)> ZipDotted(ImmutableArray<(Expression, Expression, bool)> acc,
             ImmutableArray<Expression> pps, ImmutableArray<Expression> pas) =>
             (pps, pas) switch
             {
-                ([Symbol("."), Symbol p, ..], var tas) => acc.Add((p, ListExpr(tas))),
-                ([Symbol p, .. var tps], [var a, .. var tas]) => acc.Add((p, a)).AndThen(a => ZipDotted(a, tps, tas)),
+                ([Symbol("."), Symbol p, ..], var tas) => acc.Add((p, ListExpr(tas), true)),
+                ([Symbol p, .. var tps], [var a, .. var tas]) => acc.Add((p, a, false)).AndThen(a => ZipDotted(a, tps, tas)),
                 ([],[]) => acc,
                 _ => throw SyntaxError($"{ps.Length} parameters were expected but {args.Length} were passed.", ps)
             };
@@ -637,10 +556,14 @@ public class Interpreter
         new($"[Syntax error] {msg} {Print(ListExpr(e))}");
     
     public class SyntaxException(string msg) : Exception(msg);
+
+    private static TAccumulator Fold<TSource, TAccumulator>(TAccumulator acc,
+        Func<TAccumulator, TSource, TAccumulator> fn, IEnumerable<TSource> p) =>
+        p.Aggregate(acc, fn);
 }
 
+[DebuggerStepThrough]
 public static class FunctionExtensions
 {
-    [DebuggerStepThrough]
     public static T AndThen<R,T>(this R me, Func<R, T> then) => then(me);
 }
