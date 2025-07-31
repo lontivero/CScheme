@@ -33,21 +33,10 @@
 
 (define (list . xs) xs)
 
-(define (append-two list1 list2)
-  (cond
-    ((null? list1) list2)
-    (else
-      (cons (car list1)
-        (append-two (cdr list1) list2)))))
-
-(define (append . lists)
-  (cond
-    ((null? lists) '())
-    ((null? (cdr lists)) (car lists))
-    (else
-      (let ((h (car lists))
-            (t (append (cdr lists))))
-        (append-two h `,@t)))))
+(define (append list1 list2)
+  (if (null? list1)
+    list2
+    (cons (car list1) (append (cdr list1) list2))))
 
 (define (list-ref lst n)
   (cond

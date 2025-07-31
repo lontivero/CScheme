@@ -5,7 +5,7 @@
     (newline)
     (display (if (equal? ,expected ,expr) "Passed " "!Failed \t"))
     (display (quote ,expr))
-    nil))
+    ))
 
 (test 8 ((lambda (x) (+ x x)) 4))
 
