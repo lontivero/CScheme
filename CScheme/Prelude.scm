@@ -18,10 +18,24 @@
 (define (all . xs)(not (member? #f xs)))
 (define (any . xs)(member? #t xs))
 
-(define-macro (and . xs) `(all ,@xs))
+(define (find pred lst)
+  (cond
+    ((null? lst) #f)
+    ((pred (car lst)) (car lst))
+    (else (find pred (cdr lst)))))
+
+(define (find-or-default pred lst def)
+  (or (find pred lst) def))
+
+(define (and . args)
+  (if (null? args) #t
+    (if (null? (cdr args)) (car args)
+      (if (not (car args)) (car args)
+        (apply and (cdr args))
+    ))))
+
 (define-macro (or . xs) `(any ,@xs))
-(define (not? x) (if x #f #t))
-(define (xor a b) (and (or a b) (not? (and a b))))
+(define (xor a b) (and (or a b) (not (and a b))))
 
 (define nil '())
 
@@ -71,14 +85,13 @@
 (define (modulo x y) (% x y))
 (define (remainder x y) (% x y))
 (define (odd? x) (% x 2))
-(define (even? x) (not? (odd? x)))
+(define (even? x) (not (odd? x)))
+(define (false? x) (not x))
 
 (define (length xs) 
   (if (null? xs) 0 
       (+ 1 (length (cdr xs)))))
 
-(define (pair? xs) (> (length xs) 1))
-                     
 (define (range l r)
   (if (= l r) '() 
       (cons l (range (+ 1 l) r))))
