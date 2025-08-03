@@ -306,6 +306,18 @@ public class Interpreter
         }
     }
 
+    private static Expression IsFalse(Expression expr) => expr is Boolean { Bool: false } ? True : False;
+    
+    private static EvalContext Test(Environment env, Expression exprs, Boolean expected) =>
+        Find(e => Eval(env, e).AndThen(ctx => IsFalse(ctx.Expression) == expected), exprs)
+            .AndThen(r => r is Nil ? expected : r)
+            .AndThen(r => Eval(env, r));
+    private static EvalContext And(Environment env, Expression exprs) =>
+        Test(env, exprs, True);
+
+    private static EvalContext Or(Environment env, Expression exprs) =>
+        Test(env, exprs, False);
+    
     private static Expression WrapBegin(Expression exprs) =>
         exprs switch
         {
@@ -314,11 +326,9 @@ public class Interpreter
             var e => e
         };
 
-
     private static EvalContext QuasiQuote(Environment env, Expression exprs)
     {
-        var u = Unquote(exprs);
-        return new EvalContext(env, u);
+        return new EvalContext(env, Unquote(exprs));
 
         Expression Unquote(Expression expr) =>
             expr switch
@@ -447,11 +457,6 @@ public class Interpreter
         Load(env, Cons(new String(filename), NilExpr));
 
     private static Boolean Is<T>(Expression xs) => xs is T ? True : False;
-    private static Boolean IsList(Expression xs)
-    {
-        static bool InternalIsList(Expression e) => e is Nil || e is Pair { Cdr: var cdr } && InternalIsList(cdr);
-        return InternalIsList(xs) ? True : False;
-    }
 
     public static Environment DefineNativeFunction(string fname, Func<object> fn, Environment env) =>
         InternalDefineNativeFunction(fname, os => fn(), env);
@@ -535,9 +540,10 @@ public class Interpreter
         { "string?", new Function("string?",Is<String>) },
         { "boolean?", new Function("boolean?",Is<Boolean>) },
         { "symbol?", new Function("symbol?",Is<Symbol>) },
-        { "list?", new Function("list?",IsList) },
         { "pair?", new Function("pair?",Is<Pair>) },
-        { "not", new Function("not",e => e is Boolean { Bool: false } ? True : False)}
+        { "not", new Function("not", IsFalse) },
+        { "and", new Special("and", And)},
+        { "or", new Special("and", Or)}
     }.ToImmutableDictionary();
 
     private static List Zip(Expression ps,
@@ -565,6 +571,15 @@ public class Interpreter
             var o => fn(o)
         };
     
+    private static Expression Find(Func<Expression, bool> predicate, Expression expr) =>
+        expr switch
+        {
+            Nil => NilExpr,
+            Pair { Car: var car, Cdr: Nil } => car,
+            Pair { Car: var car, Cdr: var cdr } => predicate(car) ? car : Find(predicate, cdr),
+            var e => predicate(e) ? e : NilExpr
+        };
+
     private static T Fold<T>(T acc, Func<T, Expression, T> fn, Expression p) =>
         p switch
         {
