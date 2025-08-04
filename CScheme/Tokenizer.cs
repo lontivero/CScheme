@@ -11,13 +11,17 @@ public static class Tokenizer
     public record QuasiQuoteToken : Token;
     public record UnquoteToken : Token;
     public record UnquoteSplicingToken : Token;
+
+    public record DotToken : Token;
     public record NumberToken(string number) : Token;
     public record BooleanToken(bool b) : Token;
+    public record CharacterToken(string c) : Token;
     public record StringToken(string str) : Token;
     public record SymbolToken(string symbol) : Token;
 
     private static readonly OpenToken Open = new();
     private static readonly CloseToken Close = new();
+    private static readonly DotToken Dot = new();
     private static readonly QuoteToken Quote = new();
     private static readonly QuasiQuoteToken QuasiQuote = new();
     private static readonly UnquoteToken Unquote = new();
@@ -73,11 +77,19 @@ public static class Tokenizer
                     i++;
                     yield return Unquote;
                     break;
+                case '.' when i + 1 < chars.Length && char.IsWhiteSpace(chars[i + 1]):
+                    i++;
+                    yield return Dot;
+                    break;
+                case '#' when  i + 1 < chars.Length && chars[i + 1] == '\\':
+                    i += 2;
+                    yield return new CharacterToken(ParseToken());
+                    break;
                 case '"':
                     yield return new StringToken(ParseString());
                     break;
-                case '-' when i + 1 < chars.Length && Char.IsDigit(chars[i + 1]): 
-                case '+' when i + 1 < chars.Length && Char.IsDigit(chars[i + 1]):
+                case '-' when i + 1 < chars.Length && char.IsDigit(chars[i + 1]): 
+                case '+' when i + 1 < chars.Length && char.IsDigit(chars[i + 1]):
                     yield return new NumberToken(ParseToken());
                     break;
                 default:

@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Text;
 using CScheme;
-using static CScheme.Interpreter;
+using static CScheme.Scheme;
 using Environment = System.Collections.Immutable.ImmutableDictionary<string, CScheme.Expression>;
 
-var (env, _) = Load(Env, "Tests.scm");
+var (env, _) = Load(Env, "Prelude.scm");
 env = DefineNativeFunction("now", () => DateTime.Now, env);
 var httpClient = new HttpClient();
 env = DefineNativeFunction<string>("http-get", uri => httpClient.GetStringAsync(uri).GetAwaiter().GetResult(), env);
@@ -22,6 +22,8 @@ static void Repl(Environment env)
     
     void InternalRepl(Environment env)
     {
+        var trace = false;
+        
         while (true)
         {
             Console.Write("> ");
@@ -29,14 +31,31 @@ static void Repl(Environment env)
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
             {
-                var parsingResult = Parse(Tokenizer.Tokenize(line).ToArray());
-                var (penv1, expressionResult) = Eval(env, parsingResult[0]);
-                var (penv, result) = ((Environment Env, string Result)) (penv: penv1, Print(expressionResult));
-                if (!string.IsNullOrWhiteSpace(result))
+                if (line == ".tests")
                 {
-                    Console.WriteLine(result);
+                    (env, _) = Load(Env, "Tests.scm");
                 }
-                env = penv;
+                else if (line == ".trace")
+                {
+                    Trace = true;
+                    Console.WriteLine("Trace on");
+                }
+                else if (line == ".notrace")
+                {
+                    Trace = false;
+                    Console.WriteLine("Trace off");
+                }
+                else
+                {
+                    var parsingResult = Parse(Tokenizer.Tokenize(line).ToArray());
+                    var (penv1, expressionResult) = Eval(env, parsingResult[0]);
+                    var (penv, result) = ((Environment Env, string Result)) (penv: penv1, Print(expressionResult));
+                    if (!string.IsNullOrWhiteSpace(result))
+                    {
+                        Console.WriteLine(result);
+                    }
+                    env = penv;
+                }
             }
             catch (Exception e)
             {

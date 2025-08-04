@@ -14,9 +14,35 @@
 ;     `(let (,(car bindings))
 ;        (let* ,(cdr bindings) ,body))))
 
-; logical 'and', 'or', 'not', 'xor'
-(define (all . xs)(not (member? #f xs)))
-(define (any . xs)(member? #t xs))
+
+(define (curry fn arg1)  
+  (lambda (arg) (apply fc (cons arg1 (list arg)))))
+
+(define (compose f g)      
+  (lambda (arg) (f (apply g arg))))
+
+(define (not x) (if x #f #t))
+
+(define (any pred ls . lol)
+  (define (any1 pred ls)
+    (if (pair? (cdr ls))
+      ((lambda (x) (if x x (any1 pred (cdr ls)))) (pred (car ls)))
+      (pred (car ls))))
+  (define (anyn pred lol)
+    (if (every pair? lol)
+      ((lambda (x) (if x x (anyn pred (map cdr lol))))
+        (apply pred (map car lol)))
+      #f))
+  (if (null? lol) (if (pair? ls) (any1 pred ls) #f) (anyn pred (cons ls lol))))
+
+(define (every pred ls . lol)
+  (define (every1 pred ls)
+    (if (null? (cdr ls))
+      (pred (car ls))
+      (if (pred (car ls)) (every1 pred (cdr ls)) #f)))
+  (if (null? lol)
+    (if (pair? ls) (every1 pred ls) #t)
+    (not (apply any (lambda xs (not (apply pred xs))) ls lol))))
 
 (define (find pred lst)
   (cond
@@ -37,7 +63,12 @@
 (define (list . xs) xs)
 
 (define (list? xs)
-  (or (null? xs) (list? (cdr xs))))
+  (or (null? xs)
+    (and (pair? xs)
+      (list? (cdr xs)))))
+
+(define (atom? xs)
+  (not (pair? xs)))
 
 (define (append list1 list2)
   (if (null? list1)
@@ -51,9 +82,17 @@
     ((< n 0) #f)
     (else (list-ref (cdr lst) (- n 1)))))
 
-(define (fold f a xs)
+(define (foldl f a xs)
   (if (null? xs) a
-      (fold f (f (car xs) a) (cdr xs))))
+      (foldl f (f (car xs) a) (cdr xs))))
+
+(define (foldr f end lst)
+  (if (null? lst)
+      end
+      (f (car lst) (foldr f end (cdr lst)))))
+
+(define fold foldl)
+(define reduce foldr)
 
 (define (reverse xs) (fold cons nil xs))
 
@@ -68,16 +107,23 @@
 (define (<= a b) (or (< a b) (= a b)))
 
 (define (zero? x)(= 0 x))
-(define (possitive? x)(>= x 0))
+(define (positive? x)(>= x 0))
 (define (negative? x)(< x 0))
 (define (inc x)(+ 1 x))
 (define (dec x)(- x 1))
 (define (sum xs) (fold + 0 xs))
 (define (abs x) (if (< x 0) (* -1 x) x))
-(define (modulo x y) (% x y))
+(define (modulo x y)
+  (define remainder (remainder x y))
+  (if (or 
+        (and (negative? remainder) (positive? y))
+        (and (positive? remainder) (negative? y)))
+    (+ remainder y)
+    remainder))
+
 (define (remainder x y) (% x y))
-(define (odd? x) (% x 2))
-(define (even? x) (not (odd? x)))
+(define (odd? x) (not (even? x)))
+(define (even? x) (= 0 (remainder x 2)))
 (define (false? x) (not x))
 (define (max x . rest)
   (if (null? rest)
@@ -147,6 +193,9 @@
         (cons (car xs) (filter f (cdr xs))) 
         (filter f (cdr xs)))))
 
+(define (eqv? a b) 
+  (if (eq? a b) #t (and (number? a) (equal? a b))))
+
 (define (member item lst)
   (if (null? lst) #f
       (if (equal? item (car lst)) lst
@@ -212,3 +261,80 @@
 (define newline (lambda () (display "\r\n")))
 (define (write text) (display text))
 (define (writeln text) (display text) (newline))
+
+(define-macro  (let* bindings . body)
+  (if (null? bindings) 
+    `((lambda () . ,body))
+    `(let (,(car bindings))
+       (let* ,(cdr bindings) . ,body))))
+
+(define (sum . lst) (fold + 0 lst))
+(define (product . lst) (fold * 1 lst))
+
+(define (square x)(* x x))
+
+(define (expt b n)
+  (if (= 0 n) 
+    1
+    (if (even? n) 
+      (square (expt b (/ n 2)))
+      (* b (expt b (- n 1))))))
+
+(define (boolean? x) (if (eq? x #t) #t (eq? x #f)))
+
+(define (map proc ls . lol)
+  (define (map1 proc ls res)
+    (if (pair? ls)
+      (map1 proc (cdr ls) (cons (proc (car ls)) res))
+      (if (null? ls)
+        (reverse res)
+        (error "map: improper list" ls))))
+  (define (mapn proc lol res)
+    (if (every pair? lol)
+      (mapn proc
+        (map1 cdr lol '())
+        (cons (apply proc (map1 car lol '())) res))
+      (if (every (lambda (x) (if (null? x) #t (pair? x))) lol)
+        (reverse res)
+        (error "map: improper list in list" lol))))
+  (if (null? lol)
+    (map1 proc ls '())
+    (mapn proc (cons ls lol) '())))
+
+(define (for-each f ls . lol)
+  (define (for1 f ls)
+    (if (pair? ls)
+      (begin (f (car ls)) (for1 f (cdr ls)))
+      (if (not (null? ls))
+        (error "for-each: improper list" ls))))
+  (if (null? lol) (for1 f ls) (begin (apply map f ls lol) (if #f #f))))
+
+(define (delay expr) (lambda () expr))
+(define (force thunk) (thunk))
+
+(define-macro (do bindings test-and-result . commands)
+  (let ((loop-var (gensym 'loop))
+        (vars (map car bindings))
+        (inits (map cadr bindings))
+        (steps (map (lambda (binding)
+                      (if (null? (cddr binding))
+                          (car binding)  ; use the variable itself if no step
+                          (caddr binding)))
+                    bindings))
+        (test (car test-and-result))
+        (result (cdr test-and-result)))
+    
+    ;; Create temporary variables to hold the initial values
+    (let ((temp-vars (map (lambda (v) (gensym (symbol->string v))) vars)))
+      `(let ,(map (lambda (temp init) 
+                    (list temp init))
+                  temp-vars inits)
+         (let ,loop-var ,(map (lambda (var temp)
+                                (list var temp))
+                              vars temp-vars)
+              (if ,test
+                  (begin ,@result)
+                  (begin
+                    ,@commands
+                    (,loop-var ,@steps))))))))
+

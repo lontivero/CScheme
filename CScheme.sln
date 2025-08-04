@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual Studio 2010
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CScheme", "CScheme\CScheme.csproj", "{E76A43C8-DCA7-4B66-A624-205077F5A5A2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CScheme.Tests", "CScheme.Tests\CScheme.Tests.csproj", "{6CDCD9FC-5203-4240-9148-37B25DA726E3}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -15,10 +13,6 @@ Global
 		{E76A43C8-DCA7-4B66-A624-205077F5A5A2}.Debug|x86.Build.0 = Debug|Any CPU
 		{E76A43C8-DCA7-4B66-A624-205077F5A5A2}.Release|x86.ActiveCfg = Release|Any CPU
 		{E76A43C8-DCA7-4B66-A624-205077F5A5A2}.Release|x86.Build.0 = Release|Any CPU
-		{6CDCD9FC-5203-4240-9148-37B25DA726E3}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{6CDCD9FC-5203-4240-9148-37B25DA726E3}.Debug|x86.Build.0 = Debug|Any CPU
-		{6CDCD9FC-5203-4240-9148-37B25DA726E3}.Release|x86.ActiveCfg = Release|Any CPU
-		{6CDCD9FC-5203-4240-9148-37B25DA726E3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

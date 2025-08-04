@@ -1,10 +1,11 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using CScheme;
 using static CScheme.Tokenizer;
 
 using Environment = System.Collections.Immutable.ImmutableDictionary<string, CScheme.Expression>;
-[assembly: DebuggerDisplay("{Interpreter.Print(this),ng}", Target = typeof(Expression))]
+[assembly: DebuggerDisplay("{Scheme.Print(this),ng}", Target = typeof(Expression))]
 
 namespace CScheme;
 
@@ -13,7 +14,7 @@ public abstract record Expression;
 public record EvalContext(Environment Environment, Expression Expression);
 
 
-public class Interpreter
+public class Scheme
 {
     private static Expression Lookup(string symbol, Environment env) =>
         env.TryGetValue(symbol, out var value)
@@ -27,9 +28,10 @@ public class Interpreter
 
     private delegate EvalContext SpecialExpressionsProcessor(Environment env, Expression args);
 
-    private record Number(long Value) : Expression;
+    private record Number(decimal Value) : Expression;
 
     private record String(string Value) : Expression;
+    private record Character(string Value) : Expression;
 
     private record Boolean(bool Bool) : Expression;
 
@@ -43,9 +45,9 @@ public class Interpreter
 
     private record Nil : List;
 
-    private record Function(string Name, ExpressionsProcessor Fn) : Expression;
+    private record Function(ExpressionsProcessor Fn) : Expression;
 
-    private record Special(string Name, SpecialExpressionsProcessor Fn) : Expression;
+    private record Procedure(SpecialExpressionsProcessor Fn) : Expression;
 
     private record NativeObject(object Value) : Expression;
 
@@ -58,19 +60,20 @@ public class Interpreter
     private static readonly Boolean True = new(true);
     private static readonly Boolean False = new(false);
     private static readonly Nil NilExpr = new();
-    private static readonly DummyExpression DummyExpr = new("dummy for letrec");
     private static Pair Cons(Expression Car, Expression Cdr) => new(Car, Cdr);
 
     private static Expression MapTokenToExpression(Token token) =>
         token switch
         {
-            NumberToken n => new Number(long.Parse(n.number)),
+            NumberToken n => new Number(decimal.Parse(n.number)),
             StringToken s => new String(s.str),
+            CharacterToken c => new Character(c.c),
             BooleanToken s => s.b ? True : False,
             SymbolToken t => new Symbol(t.symbol),
             _ => throw new SyntaxException($"token '{token}' is not a mappeable to an expression.")
         };
 
+    public static bool Trace = false;
     public static ImmutableArray<Expression> Parse(Token[] tokens)
     {
         var expressions = new List<Expression>();
@@ -89,6 +92,11 @@ public class Interpreter
                 tokens switch
                 {
                     [CloseToken, .. var t] => (acc, t),
+                    [DotToken, .. var t] => ParseExpression(t)
+                        .AndThen(r =>  r.UnparsedTokens is [CloseToken, .. var tokensToParse] 
+                            ? (r.ParsedExpression, tokensToParse)
+                            : throw SyntaxError("Incomplete form", NilExpr)),
+                    
                     _ => ParseExpression(tokens)
                         .AndThen(r => (Car: r.ParsedExpression, Cdr: ParseListElements(acc, r.UnparsedTokens)))
                         .AndThen(p => (Cons(p.Car, p.Cdr.Pair), p.Cdr.UnparsedTokens))
@@ -121,12 +129,12 @@ public class Interpreter
             Pair(Car: var h, Cdr: var t) => Eval(env, h).AndThen(ctx => ctx.Expression switch
             {
                 Function f => ApplyArgs(ctx.Environment, f.Fn, t),
-                Special f => f.Fn(ctx.Environment, t),
+                Procedure f => f.Fn(ctx.Environment, t),
                 _ => throw SyntaxError("The first element in a list must be a function", ctx.Expression)
             }),
             var e => new EvalContext(env, e)
         };
-        //Console.WriteLine($"{Print(expr)}    => {Print(r.Expression)}");
+        if(Trace) Console.WriteLine($"{Print(expr)}    => {Print(r.Expression)}");
         return r;
     }
 
@@ -148,8 +156,8 @@ public class Interpreter
             Symbol sym => sym.Value,
             Number num => num.Value.ToString(),
             Boolean b => b.Bool ? "#t" : "#f",
-            Function f => f.Name,
-            Special s => s.Name,
+            Character c => $"#\\{c.Value}",
+            Function or Procedure => "procedure",
             NativeObject o => $"{o.Value}",
             DummyExpression => string.Empty,
             _ => throw new ArgumentOutOfRangeException(nameof(expr))
@@ -164,7 +172,7 @@ public class Interpreter
             _ => Print(lst)
         };
 
-    private static ExpressionsProcessor Math(long identity, long unary, Func<long, long, long> op) =>
+    private static ExpressionsProcessor Math(decimal identity, decimal unary, Func<decimal, decimal, decimal> op) =>
         es => es switch
         {
             Nil => new Number(identity),
@@ -174,41 +182,47 @@ public class Interpreter
             _ => throw SyntaxError("Math can only involve number", es)
         };
 
-    private static ExpressionsProcessor Compare(Func<long, long, bool> op) =>
+    private static ExpressionsProcessor Compare(Func<decimal, decimal, bool> op) =>
         es => es is Pair {Car: Number a, Cdr: Pair {Car: Number b}}
             ? op(a.Value, b.Value) ? True : False
             : throw SyntaxError("Binary comparison requires two expressions", es);
 
     private static ExpressionsProcessor NumericEquality =>
-        es => es is Pair {Car: Number a, Cdr: Pair {Car: Number b}}
-            ? a.Value == b.Value ? True : False
+        es => es is Pair p 
+            ? SameType<Number>(p, (a, b) => a.Value == b.Value) ? True : False
             : throw SyntaxError("Binary comparison requires two expressions", es);
 
+    private static bool SameType<T>(Pair p, Func<T, T, bool> fn) =>
+        p is {Car: T a, Cdr: Pair {Car: T b}} && fn(a, b);
+    
     private static ExpressionsProcessor IdentityEquality =>
         es => es switch
         {
-            Pair {Car: Symbol a, Cdr: Pair {Car: Symbol b}} => a.Value == b.Value ? True : False,
-            Pair {Car: Number a, Cdr: Pair {Car: Number b}} => a.Value == b.Value ? True : False,
-            Pair {Car: String a, Cdr: Pair {Car: String b}} => a.Value == b.Value ? True : False,
-            Pair {Car: Boolean a, Cdr: Pair {Car: Boolean b}} => a.Bool == b.Bool ? True : False,
-            Pair {Car: Pair a, Cdr: Pair {Car: Pair b}} => ReferenceEquals(a, b) ? True : False,
-            Pair {Car: Function a, Cdr: Pair {Car: Function b}} => ReferenceEquals(a.Fn, b.Fn) ? True : False,
-            Pair {Car: Special a, Cdr: Pair {Car: Special b}} => ReferenceEquals(a.Fn, b.Fn) ? True : False,
-            Pair {Car: Nil, Cdr: Pair {Car: Nil}} => True,
+            Pair p when SameType<Number>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<String>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<Character>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<Boolean>(p, (a, b) => a.Bool == b.Bool) => True,
+            Pair p when SameType<Symbol>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<Pair>(p, ReferenceEquals) => True,
+            Pair p when SameType<Function>(p, (a, b) => ReferenceEquals(a.Fn, b.Fn)) => True,
+            Pair p when SameType<Procedure>(p, (a, b) => ReferenceEquals(a.Fn, b.Fn)) => True,
+            Pair p when SameType<Nil>(p, (_, _) => true) => True,
+            Pair {Cdr: Pair} => False,
             _ => throw SyntaxError("Binary comparison requires two expressions", es)
         };
 
     private static ExpressionsProcessor CompareStructuralEquality =>
         es => es switch
         {
-            Pair {Car: Number a, Cdr: Pair {Car: Number b}} => a.Value == b.Value ? True : False,
-            Pair {Car: String a, Cdr: Pair {Car: String b}} => a.Value == b.Value ? True : False,
-            Pair {Car: Boolean a, Cdr: Pair {Car: Boolean b}} => a.Bool == b.Bool ? True : False,
-            Pair {Car: Symbol a, Cdr: Pair {Car: Symbol b}} => a.Value == b.Value ? True : False,
-            Pair {Car: Function a, Cdr: Pair {Car: Function b}} => a.Fn == b.Fn ? True : False,
-            Pair {Car: Special a, Cdr: Pair {Car: Special b}} => a.Fn == b.Fn ? True : False,
-            Pair {Car: Pair a, Cdr: Pair {Car: Pair b}} => a == b ? True : False,
-            Pair {Car: Nil, Cdr: Pair {Car: Nil}} => True,
+            Pair p when SameType<Number>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<String>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<Character>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<Boolean>(p, (a, b) => a.Bool == b.Bool) => True,
+            Pair p when SameType<Symbol>(p, (a, b) => a.Value == b.Value) => True,
+            Pair p when SameType<Function>(p, (a, b) => a.Fn == b.Fn) => True,
+            Pair p when SameType<Procedure>(p, (a, b) => a.Fn == b.Fn) => True,
+            Pair p when SameType<Pair>(p, (a, b) => a == b) => True,
+            Pair p when SameType<Nil>(p, (_, _) => true) => True,
             _ => False
         };
 
@@ -243,11 +257,20 @@ public class Interpreter
 
     private static EvalContext Let(Environment env, Expression exprs)
     {
-        if (exprs is not Pair {Car: var bindings, Cdr: var body})
-            throw SyntaxError("'let' must have bindings and a body expression.", exprs);
-
-        return Eval(Fold(env, Bind, bindings), WrapBegin(body)) with {Environment = env};
-
+        var ctx = exprs switch
+        {
+            Pair {Car: Symbol {Value: var sym}, Cdr: Pair { Car: var bindings, Cdr: var body} let} => 
+                Map(b => b is Pair { Car: Symbol pname } ? pname : throw SyntaxError("binding", b), bindings)
+                    .AndThen(pnames => Cons(pnames, body))
+                    .AndThen(procDef => Lambda(env, procDef).Expression)
+                    .AndThen(proc => ExtendEnvironment([(sym, proc)], env))
+                    .AndThen(penv => Let(penv, let)),
+            Pair {Car: var bindings, Cdr: var body} => 
+                Eval(Fold(env, Bind, bindings), WrapBegin(body)),
+            _ => throw SyntaxError("'let' must have bindings and a body expression.", exprs)
+        };
+        return ctx with { Environment = env };
+        
         Environment Bind(Environment penv, Expression binding) =>
             binding is Pair {Car: Symbol {Value: var sym}, Cdr: var e}
                 ? ExtendEnvironment([(sym, Eval(env, Car(e)).Expression)], penv)
@@ -267,31 +290,18 @@ public class Interpreter
                 : throw SyntaxError("'let' binding.", binding);
     }
 
-    private static EvalContext LetStar(Environment env, Expression exprs)
-    {
-        if (exprs is not Pair {Car: var bindings, Cdr: var body})
-            throw SyntaxError("'let*' must have bindings and a body expression.", exprs);
-
-        return Eval(Fold(env, Bind, bindings), WrapBegin(body))with {Environment = env};
-
-        Environment Bind(Environment penv, Expression bind) =>
-            bind is Pair {Car: Symbol {Value: var sym}, Cdr: var e}
-                ? ExtendEnvironment([(sym, Eval(penv, Car(e)).Expression)], penv)
-                : throw SyntaxError("'let' binding.", bind);
-    }
-
     private static EvalContext Lambda(Environment env, Expression expr)
     {
         if (expr is not Pair {Car: var parameters, Cdr: var body})
             throw SyntaxError("'lambda'", expr);
 
-        return new EvalContext(env, new Special("anonymous", Closure));
+        return new EvalContext(env, new Procedure(Closure));
 
         EvalContext Closure(Environment callerEnv, Expression args)
         {
             var penv = env.SetItems(callerEnv);
             var bindings = Zip(parameters, args);
-            return Eval(Fold(penv, Bind, bindings), WrapBegin(body));
+            return Eval(Fold(penv, Bind, bindings), WrapBegin(body)) with{ Environment = callerEnv};
 
             Environment Bind(Environment penv, Expression binding) =>
                 binding switch
@@ -328,33 +338,26 @@ public class Interpreter
 
     private static EvalContext QuasiQuote(Environment env, Expression exprs)
     {
+        var u = Unquote(exprs);
         return new EvalContext(env, Unquote(exprs));
 
         Expression Unquote(Expression expr) =>
             expr switch
             {
-                Pair p => UnquoteList(p),
+                Pair { Car: Symbol("unquote"), Cdr: var e} => Eval(env, e).Expression,
+                Pair { Car: Symbol("unquote-splicing"), Cdr: var e} => Eval(env, e).Expression,
+                Pair { Car: var car, Cdr: var cdr } =>
+                    car is Pair { Car: Symbol("unquote-splicing") }
+                        ? Append(Unquote(car), Unquote(cdr))
+                        : Cons(Unquote(car), Unquote(cdr)),
                 var e => e
             };
 
-        Expression UnquoteList(Expression expr) =>
-            expr switch
+        Expression Append(Expression p1, Expression p2) =>
+            p1 switch
             {
-                Pair {Car: Symbol("unquote"), Cdr: var cdr} =>
-                    Eval(env, cdr).Expression,
-
-                Pair
-                    {
-                        Car: var car, Cdr: Pair {Car: Pair {Car: Symbol("unquote-splicing"), Cdr: Pair {Car: var cdr}}}
-                    } =>
-                    Cons(car, Eval(env, cdr).Expression),
-                Pair {Car: var car, Cdr: Pair {Car: Pair {Car: Symbol("unquote-splicing"), Cdr: var cdr}}} =>
-                    Cons(car, Eval(env, cdr).Expression),
-
-                Pair {Car: var car, Cdr: var cdr} =>
-                    Cons(Unquote(car), UnquoteList(cdr)),
-                Nil => NilExpr,
-                var e => Cons(e, NilExpr)
+                Nil => p2,
+                Pair p => Cons(p.Car, Append(p.Cdr, p2))
             };
     }
 
@@ -362,25 +365,21 @@ public class Interpreter
         new(env, exprs);
 
     private static EvalContext Begin(Environment env, Expression exprs) =>
-        Fold(new EvalContext(env, NilExpr), (ctx, e) => Eval(ctx.Environment, e), exprs);
+        Fold(new EvalContext(env, NilExpr), (ctx, e) => Eval(ctx.Environment, e), exprs); // with{ Environment = env};
 
-    private static EvalContext Define(Environment env, Expression exprs)
-    {
-        return exprs switch
+    private static EvalContext Define(Environment env, Expression exprs) =>
+        exprs switch
         {
-            Pair {Car: Symbol {Value: var sym}, Cdr: Pair {Car: var e}} => InternalDefine(sym, e),
+            Pair {Car: Symbol {Value: var sym}, Cdr: Pair {Car: var e}} =>
+                Eval(env, e)
+                    .AndThen(ctx => ExtendEnvironment([(sym, ctx.Expression)], ctx.Environment))
+                    .AndThen(penv => new EvalContext(penv, new DummyExpression($"Define {sym}"))),
             Pair {Car: Pair {Car: Symbol {Value: var sym}, Cdr: var ps}, Cdr: var body} =>
-                InternalDefine(sym, Cons(new Symbol("lambda"), Cons(ps, WrapBegin(body)))),
+                Lambda(env, Cons(ps, body))
+                    .AndThen(ctx => ExtendEnvironment([(sym, ctx.Expression)], ctx.Environment))
+                    .AndThen(penv => new EvalContext(penv, new DummyExpression($"Define {sym}"))),
             _ => throw SyntaxError("'Define'", exprs)
         };
-
-        EvalContext InternalDefine(string sym, Expression e)
-        {
-            var (penv, pe) = Eval(env, e);
-            var ppenv = ExtendEnvironment([(sym, pe)], penv);
-            return new EvalContext(ppenv, new DummyExpression($"Define {sym}"));
-        }
-    }
 
     private static EvalContext Apply(Environment env, Expression exprs)
     {
@@ -390,10 +389,15 @@ public class Interpreter
         }
 
         var proc = Lookup(procName, env);
-        var fn = proc is Special f ? f.Fn : throw new Exception("");
-        return Map(e => Eval(env, e).Expression, args)
-            .AndThen(ars => fn(env, 
-                ars is Pair {Car: var car, Cdr: Nil} ? car : ars));
+        var evaluatedArgs = Map(e => Eval(env, e).Expression, args)
+            .AndThen(ars => ars is Pair {Car: var car, Cdr: Nil} ? car : ars);
+        
+        return proc switch
+        {
+            Procedure p => p.Fn(env, evaluatedArgs),
+            Function f => f.Fn(evaluatedArgs).AndThen(r => new EvalContext(env, r)),
+            _ => throw SyntaxError("", exprs)
+        };
     }
 
     private static EvalContext DefineMacro(Environment env, Expression exprs)
@@ -403,14 +407,14 @@ public class Interpreter
             throw SyntaxError("'define-macro'", exprs);
         }
 
-        var penv = ExtendEnvironment([(sym, new Special("anonymous", Closure))], env);
+        var penv = ExtendEnvironment([(sym, new Procedure(Closure))], env);
         return new EvalContext(penv, new DummyExpression($"Define Macro {sym}"));
         
         EvalContext Closure(Environment callerEnv, Expression args)
         {
             var binding = Zip(parameters, args);
             return Eval(Fold(callerEnv, Bind, binding), body)
-                .AndThen(ctx => Eval(ctx.Environment, ctx.Expression));
+                .AndThen(ctx => Eval(callerEnv, ctx.Expression) with{ Environment = callerEnv });
 
             Environment Bind(Environment penv, Expression pexpr) =>
                 pexpr is Pair {Car: Symbol {Value: var s}, Cdr: var e}
@@ -419,13 +423,38 @@ public class Interpreter
         }
     }
 
-    private static EvalContext Set(Environment env, Expression exprs) =>
-        exprs is Pair { Car: Symbol {Value: var sym}, Cdr: var e } 
-            ? Eval(env, e).AndThen(ctx =>
-                // set! is dangerous because it alters the bindings table. Should I remove it???
-                new EvalContext(env.SetItem(sym, ctx.Expression), new DummyExpression($"Set {sym}")))
-            : throw SyntaxError("set!", exprs);
-
+    private static int _genSymCounter;
+    private static Expression GenSym(Expression exprs) =>
+        exprs switch
+        {
+            Symbol {Value: var prefix} => new Symbol($"#:{prefix}{_genSymCounter++}"),
+            String {Value: var prefix} => new Symbol($"#:{prefix}{_genSymCounter++}"),
+            Nil => new Symbol($"#:g{_genSymCounter++}"),
+            _ => throw SyntaxError("gensym", exprs)
+        };
+    
+    private static ExpressionsProcessor Convert<TSource>(
+        Func<TSource, Expression> transformer,
+        string operationName) 
+        where TSource : Expression =>
+        expr =>
+        expr is TSource source
+            ? transformer(source)
+            : throw SyntaxError(operationName, expr);
+    
+    private static ExpressionsProcessor StringToSymbol =
+        Convert<String>(str => new Symbol(str.Value), "string->symbol"); 
+    
+    private static ExpressionsProcessor SymbolToString =
+        Convert<Symbol>(sym => new String(sym.Value), "symbol->string"); 
+    
+    private static ExpressionsProcessor NumberToString =
+        Convert<Number>(num => new String(num.Value.ToString(CultureInfo.InvariantCulture)), "number->string"); 
+    
+    private static Expression StringAppend(Expression exprs) =>
+        exprs is Pair {Car: String {Value: var str1 }, Cdr: Pair { Car: String{ Value: var str2} }}
+            ? new String($"{str1}{str2}")
+            : throw SyntaxError("string-append", exprs);
     private static Expression NullQm(Expression es) =>
         es is Nil or Pair { Car: Nil, Cdr: Nil } ? True : False;
     
@@ -442,7 +471,6 @@ public class Interpreter
             throw SyntaxError("'load'", exprs);
         }
 
-        // var ts = Tokenize("(define nil '())");
         var tokens = Tokenize(File.OpenText(filename).ReadToEnd());
         var parsingResults = Parse(tokens.ToArray());
         foreach (var result in parsingResults)
@@ -474,6 +502,7 @@ public class Interpreter
             {
                 int intValue => new Number(intValue),
                 string stringValue => new String(stringValue),
+                char characterValue => new Character(characterValue.ToString()),
                 bool booleanValue => booleanValue ? True : False,
                 IEnumerable<object> e => e.Select(ConvertNativeToScheme).Reverse().Aggregate((Expression)NilExpr, (acc, expr) => Cons(expr, acc)),
                 var o => new NativeObject(o)
@@ -484,6 +513,7 @@ public class Interpreter
             {
                 Number { Value: var intValue } => intValue,
                 String { Value: var stringValue } => stringValue,
+                Character { Value: var characterValue } => characterValue,
                 Boolean { Bool: var boolValue } => boolValue,
                 NativeObject { Value: var objValue } => objValue,
                 Symbol { Value: var symValue } => symValue,
@@ -497,7 +527,7 @@ public class Interpreter
             var nativeResult = ConvertNativeToScheme(result);
             return nativeResult;
         }
-        var fnative = new Function(fname, WrapNativeFunction);
+        var fnative = new Function(WrapNativeFunction);
         
         return env.Add(fname, fnative);
     }
@@ -506,44 +536,46 @@ public class Interpreter
         Fold(ImmutableArray<Expression>.Empty, (acc, e) => acc.Add(e), p);
     
     public static readonly Environment Env = new Dictionary<string, Expression> {
-        { "*", new Function("*",Multiply) },
-        { "/", new Function("/",Divide) },
-        { "%", new Function("%",Modulus) },
-        { "+", new Function("+",Add) },
-        { "-", new Function("-",Subtract) },
-        { "=", new Function("=",NumericEquality) },
-        { "eq?", new Function("eq?",IdentityEquality) },
-        { "equal?", new Function("equal?",CompareStructuralEquality) },
-        { ">", new Function(">",Greater) },
-        { "<", new Function("<",Less) },
-        { "null?", new Function("null?",NullQm) },
-        { "if", new Special("if",If) },
-        { "let", new Special("let",Let) },
-        { "letrec", new Special("letrec",LetRec) },
-        { "let*", new Special("let*",LetStar) },
-        { "lambda", new Special("lambda",Lambda) },
-        { "cons", new Function("cons",Cons) },
-        { "car", new Function("car",Car) },
-        { "cdr", new Function("cdr",Cdr) },
-        { "quote", new Special("quote",Quote) },
-        { "quasiquote", new Special("quasiquote",QuasiQuote) },
-        { "unquote", new Function("unquote",e => DummyExpr)},
-        { "eval", new Special("eval",Evaluate) },
-        { "define-macro", new Special("define-macro",DefineMacro) },
-        { "set!", new Special("set!",Set) },
-        { "begin", new Special("begin",Begin) },
-        { "define", new Special("define",Define) },
-        { "apply", new Special("apply",Apply) },
-        { "load", new Special("load",Load) },
-        { "display", new Function("display",Display) },
-        { "number?", new Function("number?",Is<Number>) },
-        { "string?", new Function("string?",Is<String>) },
-        { "boolean?", new Function("boolean?",Is<Boolean>) },
-        { "symbol?", new Function("symbol?",Is<Symbol>) },
-        { "pair?", new Function("pair?",Is<Pair>) },
-        { "not", new Function("not", IsFalse) },
-        { "and", new Special("and", And)},
-        { "or", new Special("and", Or)}
+        { "*", new Function(Multiply) },
+        { "/", new Function(Divide) },
+        { "%", new Function(Modulus) },
+        { "+", new Function(Add) },
+        { "-", new Function(Subtract) },
+        { "=", new Function(NumericEquality) },
+        { "eq?", new Function(IdentityEquality) },
+        { "equal?", new Function(CompareStructuralEquality) },
+        { ">", new Function(Greater) },
+        { "<", new Function(Less) },
+        { "null?", new Function(NullQm) },
+        { "if", new Procedure(If) },
+        { "let", new Procedure(Let) },
+        { "letrec", new Procedure(LetRec) },
+        { "lambda", new Procedure(Lambda) },
+        { "cons", new Function(Cons) },
+        { "car", new Function(Car) },
+        { "cdr", new Function(Cdr) },
+        { "quote", new Procedure(Quote) },
+        { "quasiquote", new Procedure(QuasiQuote) },
+        { "eval", new Procedure(Evaluate) },
+        { "define-macro", new Procedure(DefineMacro) },
+        { "begin", new Procedure(Begin) },
+        { "define", new Procedure(Define) },
+        { "apply", new Procedure(Apply) },
+        { "load", new Procedure(Load) },
+        { "display", new Function(Display) },
+        { "number?", new Function(Is<Number>) },
+        { "string?", new Function(Is<String>) },
+        { "symbol?", new Function(Is<Symbol>) },
+        { "pair?", new Function(Is<Pair>) },
+        { "procedure?", new Function( e => (Is<Function>(e).Bool || Is<Procedure>(e).Bool) ? True : False) },
+        { "and", new Procedure( And)},
+        { "or", new Procedure( Or)},
+        { "gensym", new Function( GenSym)},
+        { "string->symbol", new Function( StringToSymbol)},
+        { "symbol->string", new Function( SymbolToString)},
+        { "number->string", new Function( NumberToString)},
+        { "string-append", new Function( StringAppend)}
+        
     }.ToImmutableDictionary();
 
     private static List Zip(Expression ps,
@@ -554,12 +586,11 @@ public class Interpreter
         List ZipDotted(List acc, Expression pps, Expression pas) =>
             (pps, pas) switch
             {
-                (Symbol p, var tas) => Cons(Cons(p, tas), acc),
-                (Pair { Car: Symbol("."), Cdr: Pair { Car: Symbol p} }, var tas) => Cons(new DottedList(p, tas), acc),
                 (Pair { Car: Symbol p}, Pair { Car: var a}) => Cons(Cons(p, a), ZipDotted(acc, Cdr(pps), Cdr(pas))),
+                (Symbol p, Pair { Cdr: not Nil } tas) => Cons(new DottedList(p, tas), acc),
+                (Symbol p, var tas) => Cons(new DottedList(p, tas), acc),
                 (Nil,Nil) => acc,
                 _ => throw SyntaxError($"parameters were expected but were passed.", ps)
-                //_ => throw SyntaxError($"{ps.Length} parameters were expected but {args.Length} were passed.", ps)
             };
     }
 
@@ -586,15 +617,6 @@ public class Interpreter
             Nil => acc,
             Pair { Car: var car, Cdr: var cdr } => Fold(fn(acc, car), fn, cdr),
             var e => fn(acc, e)
-        };
-    
-    private static T Foldr<T>(Func<Expression, T, T> fn, T acc, Expression p) =>
-        p switch
-        {
-            Nil => acc,
-            Pair { Car: var car, Cdr: var cdr } => fn(car, Foldr(fn, acc, cdr)),
-            var e => fn(e, acc),
-            //_ => throw SyntaxError("Foldr", p)
         };
     
     private static SyntaxException SyntaxError(string msg, Expression e) =>

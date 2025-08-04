@@ -9,7 +9,7 @@
 
 (test 8 ((lambda (x) (+ x x)) 4))
 
-; (test '(3 4 5 6) ((lambda x x) 3 4 5 6))
+(test '(3 4 5 6) ((lambda x x) 3 4 5 6))
 
 (test 'yes (if (> 3 2) 'yes 'no))
 
@@ -25,7 +25,7 @@
 
 (test #f (and (= 2 2) (< 2 1)))
 
-; (test '(f g) (and 1 2 'c '(f g)))
+(test '(f g) (and 1 2 'c '(f g)))
 
 (test #t (and))
 
@@ -33,7 +33,18 @@
 
 (test #t (or (= 2 2) (< 2 1)))
 
-; (test '(b c) (or (memq 'b '(a b c)) (/ 3 0)))
+(test '(b c) (or (memq 'b '(a b c)) (/ 3 0)))
+
+(test '(a b c) (memq 'a '(a b c)))
+
+(test '(b c) (memq 'b '(a b c)))
+
+(test #f (memq 'a '(b c d)))
+
+(test #f (memq (list 'a) '(b (a) c)))
+
+(test '((a) c) (member (list 'a) '(b (a) c)))
+; (test '(101 102) (memv 101 '(100 101 102)))
 
 (test 6 (let ((x 2) (y 3)) (* x y)))
 
@@ -63,15 +74,15 @@
 ;       ((null? x)
 ;         sum))))
 ; 
-; (test '((6 1 3) (-5 -2))
-;   (let loop ((numbers '(3 -2 1 6 -5)) (nonneg '()) (neg '()))
-;     (cond
-;       ((null? numbers)
-;         (list nonneg neg))
-;       ((>= (car numbers) 0)
-;         (loop (cdr numbers) (cons (car numbers) nonneg) neg))
-;       ((< (car numbers) 0)
-;         (loop (cdr numbers) nonneg (cons (car numbers) neg))))))
+ (test '((6 1 3) (-5 -2))
+   (let loop ((numbers '(3 -2 1 6 -5)) (nonneg '()) (neg '()))
+     (cond
+       ((null? numbers)
+         (list nonneg neg))
+       ((>= (car numbers) 0)
+         (loop (cdr numbers) (cons (car numbers) nonneg) neg))
+       ((< (car numbers) 0)
+         (loop (cdr numbers) nonneg (cons (car numbers) neg))))))
 
 (test '(list 3 4) `(list ,(+ 1 2) 4))
  
@@ -119,7 +130,7 @@
 
 (test -3 (- 3))
 
-; (test -1.0 (- 3.0 4))
+(test -1.0 (- 3.0 4))
 
 (test 7 (abs -7))
 
@@ -139,7 +150,13 @@
 
 (test -1 (remainder -13 -4))
 
-; (test 4 (gcd 32 -36))
+(test 0 (gcd))
+
+(test 4 (gcd 32 -36))
+
+(test 1 (lcm))
+
+(test 288 (lcm 32 -36))
 
 (test #f (not 3))
 
@@ -161,9 +178,9 @@
 
 (test '("a" b c) (cons "a" '(b c)))
 
-; (test '(a . 3) (cons 'a 3))
+(test '(a . 3) (cons 'a 3))
 
-; (test '((a b) . c) (cons '(a b) 'c))
+(test '((a b) . c) (cons '(a b) 'c))
 
 (test 'a (car '(a b c)))
 
@@ -173,13 +190,27 @@
 
 (test '(b c d) (cdr '((a) b c d)))
 
-; (test 2 (cdr '(1 . 2)))
+(test 2 (cdr '(1 . 2)))
 
 (test #t (list? '(a b c)))
 
 (test #t (list? '()))
 
-; (test #f (list? '(a . b)))
+(define e '((a 1) (b 2) (c 3)))
+
+(test '(a 1) (assq 'a e))
+
+(test '(b 2) (assq 'b e))
+
+(test #f (assq 'd e))
+
+(test #f (assq (list 'a) '(((a)) ((b)) ((c)))))
+
+(test '((a)) (assoc (list 'a) '(((a)) ((b)) ((c)))))
+
+;(test '(5 7) (assv 5 '((2 3) (5 7) (11 13))))
+
+(test #f (list? '(a . b)))
 
 
 ; (test #f
@@ -203,7 +234,7 @@
 
 (test '(a (b) (c)) (append '(a (b)) '((c))))
 
-;(test '(a b c . d) (append '(a b) '(c . d)))
+(test '(a b c . d) (append '(a b) '(c . d)))
 
 (test 'a (append '() 'a))
 
@@ -212,16 +243,16 @@
 (test '((e (f)) d (b c) a) (reverse '(a (b c) d (e (f)))))
 
 (test 'c (list-ref '(a b c d) 2))
-
+  
 (test '(a) (cons 'a '()))
 
 (test '((a) b c d) (cons '(a) '(b c d)))
 
 (test '("a" b c) (cons "a" '(b c)))
 
-; (test '(a . 3) (cons 'a 3))
+(test '(a . 3) (cons 'a 3))
 
-; (test '((a b) . c) (cons '(a b) 'c))
+(test '((a b) . c) (cons '(a b) 'c))
 
 (test 'a (car '(a b c)))
 
@@ -244,6 +275,32 @@
 (test #t (string? "a"))
 
 (test #f (string? 'a))
+
+(test #t (procedure? car))
+
+(test #f (procedure? 'car))
+
+(test #t (procedure? (lambda (x) (* x x))))
+
+(test #f (procedure? '(lambda (x) (* x x))))
+
+(test 7 (apply + (list 3 4)))
+
+(test '(b e h) (map cadr '((a b) (d e) (g h))))
+
+(test '(1 4 27 256 3125) (map (lambda (n) (expt n n)) '(1 2 3 4 5)))
+
+(test '(5 7 9) (map + '(1 2 3) '(4 5 6)))
+
+(test 3 (force (delay (+ 1 2))))
+
+(test '(3 3) (let ((p (delay (+ 1 2)))) (list (force p) (force p))))
+
+(test 'ok (let ((else 1)) (cond (else 'ok) (#t 'bad))))
+
+; (test '(,foo) (let ((unquote 1)) `(,foo)))
+
+; (test '(,@foo) (let ((unquote-splicing 1)) `(,@foo)))
 
 (letrec ((add (lambda (a b) (+ a b))))
   (write (add 3 4))
