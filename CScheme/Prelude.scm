@@ -311,6 +311,11 @@
     (map1 proc ls '())
     (mapn proc (cons ls lol) '())))
 
+(define (zip a b)
+  (if (or (null? a) (null? b))
+    '()
+    (cons (list (car a) (car b)) (zip (cdr a) (cdr b)))))
+
 (define (for-each f ls . lol)
   (define (for1 f ls)
     (if (pair? ls)
