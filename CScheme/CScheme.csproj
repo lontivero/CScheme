@@ -8,13 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <Content Update="Prelude.scm">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </Content>
-    </ItemGroup>
-
-    <ItemGroup>
-      <None Update="Prelude.scm">
+      <None Update="Stdlib.scm">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </None>
       <None Update="Tests.scm">

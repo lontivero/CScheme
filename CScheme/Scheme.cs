@@ -525,13 +525,13 @@ public class Scheme
         { "symbol?", new Function(Is<Symbol>) },
         { "pair?", new Function(Is<Pair>) },
         { "procedure?", new Function( e => (Is<Function>(e).Bool || Is<Procedure>(e).Bool) ? True : False) },
-        { "and", new Procedure( And)},
-        { "or", new Procedure( Or)},
-        { "gensym", new Function( GenSym)},
-        { "string->symbol", new Function( StringToSymbol)},
-        { "symbol->string", new Function( SymbolToString)},
-        { "number->string", new Function( NumberToString)},
-        { "string-append", new Function( StringAppend)}
+        { "and", new Procedure(And)},
+        { "or", new Procedure(Or)},
+        { "gensym", new Function(GenSym)},
+        { "string->symbol", new Function(StringToSymbol)},
+        { "symbol->string", new Function(SymbolToString)},
+        { "number->string", new Function(NumberToString)},
+        { "string-append", new Function(StringAppend)}
         
     }.ToImmutableDictionary();
 

@@ -1,10 +1,9 @@
-(load "Prelude.scm")
+(load "Stdlib.scm")
 
 (define-macro (test expected expr)
   `(begin
-    (newline)
-    (display (if (equal? ,expected ,expr) "Passed " "!Failed \t"))
-    (display (quote ,expr))
+    (write (if (equal? ,expected ,expr) "Passed " "!Failed \t"))
+    (writeln (quote ,expr))
     ))
 
 (test 8 ((lambda (x) (+ x x)) 4))
@@ -20,6 +19,14 @@
 (test 'greater (cond ((> 3 2) 'greater) ((< 3 2) 'less)))
 
 (test 'equal (cond ((> 3 3) 'greater) ((< 3 3) 'less) (else 'equal)))
+
+(test 'composite (case (* 2 3) ((2 3 5 7) 'prime) ((1 4 6 8 9) 'composite)))
+
+(test 'consonant
+  (case (car '(c d))
+    ((a e i o u) 'vowel)
+    ((w y) 'semivowel)
+    (else 'consonant)))
 
 (test #t (and (= 2 2) (> 2 1)))
 
@@ -302,17 +309,30 @@
 
 ; (test '(,@foo) (let ((unquote-splicing 1)) `(,@foo)))
 
+(test '(a 3 4 5 6 b) `(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b))
+
+(test '(10 5 4 16 9 8) `(10 5 ,(expt 2 2) ,@(map (lambda (n) (expt n 2)) '(4 3)) 8))
+
+; (test '(a `(b ,(+ 1 2) ,(foo 4 d) e) f)
+;  `(a `(b ,(+ 1 2) ,(foo ,(+ 1 3) d) e) f))
+
+; (test '(a `(b ,x ,'y d) e)
+;  (let ((name1 'x)
+;         (name2 'y))
+;    `(a `(b ,,name1 ,',name2 d) e)))
+
+; (test '(list 3 4)
+;   (quasiquote (list (unquote (+ 1 2)) 4)))
+
+(writeln "letrec tests ---")
 (letrec ((add (lambda (a b) (+ a b))))
-  (write (add 3 4))
-  (newline))
+  (test 7 (add 3 4)))
 
 (letrec ((even? (lambda (n) (if (zero? n) #t (odd? (- n 1)))))
           (odd? (lambda (n) (if (zero? n) #f (even? (- n 1))))))
-  (write (even? 1000))
-  (newline)
-  (write (even? 1001))
-  (newline)
-  (write (odd? 1000))
-  (newline)
+  (test #t (even? 1000))
+  (test #f (even? 1001))
+  (test #f (odd? 1000))
   )
-(newline)
+
+(writeln "Done!")
