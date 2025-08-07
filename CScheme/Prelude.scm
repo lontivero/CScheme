@@ -1,12 +1,10 @@
 ﻿(define-macro (cond h . t)
-               (if (null? h)
-                  nil
-                  (begin
-                    ;(define h (car args))
-                    ;(define t (cdr args))
-                    (define test1 (if (equal? (car h) 'else) '#t (car h)))
-                    (define expr1 (car (cdr h)))
-                    `(if ,test1 ,expr1 (cond ,@t)))))
+   (if (null? h)
+       nil
+       (begin
+         (define test1 (if (equal? (car h) 'else) '#t (car h)))
+         (define expr1 (car (cdr h)))
+         `(if ,test1 ,expr1 (cond ,@t)))))
 
 (define-macro (case key . clauses)
   (let ((key-var (gensym "key")))
@@ -28,7 +26,7 @@
                    ,(process-clauses (cdr clauses))))))))))
 
 (define (curry fn arg1)  
-  (lambda (arg) (apply fc (cons arg1 (list arg)))))
+  (lambda (arg) (apply fn (cons arg1 (list arg)))))
 
 (define (compose f g)      
   (lambda (arg) (f (apply g arg))))
