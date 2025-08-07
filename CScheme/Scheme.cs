@@ -255,28 +255,6 @@ public class Scheme
             })
             : throw SyntaxError("'if' must have a condition and true expressions", exprs);
 
-    private static EvalContext Let(Environment env, Expression exprs)
-    {
-        var ctx = exprs switch
-        {
-            Pair {Car: Symbol {Value: var sym}, Cdr: Pair { Car: var bindings, Cdr: var body} let} => 
-                Map(b => b is Pair { Car: Symbol pname } ? pname : throw SyntaxError("binding", b), bindings)
-                    .AndThen(pnames => Cons(pnames, body))
-                    .AndThen(procDef => Lambda(env, procDef).Expression)
-                    .AndThen(proc => ExtendEnvironment([(sym, proc)], env))
-                    .AndThen(penv => Let(penv, let)),
-            Pair {Car: var bindings, Cdr: var body} => 
-                Eval(Fold(env, Bind, bindings), WrapBegin(body)),
-            _ => throw SyntaxError("'let' must have bindings and a body expression.", exprs)
-        };
-        return ctx with { Environment = env };
-        
-        Environment Bind(Environment penv, Expression binding) =>
-            binding is Pair {Car: Symbol {Value: var sym}, Cdr: var e}
-                ? ExtendEnvironment([(sym, Eval(env, Car(e)).Expression)], penv)
-                : throw SyntaxError("'let' binding.", binding);
-    }
-
     private static EvalContext LetRec(Environment env, Expression exprs)
     {
         if (exprs is not Pair {Car: var bindings, Cdr: var body})
@@ -548,7 +526,6 @@ public class Scheme
         { "<", new Function(Less) },
         { "null?", new Function(NullQm) },
         { "if", new Procedure(If) },
-        { "let", new Procedure(Let) },
         { "letrec", new Procedure(LetRec) },
         { "lambda", new Procedure(Lambda) },
         { "cons", new Function(Cons) },
@@ -578,8 +555,7 @@ public class Scheme
         
     }.ToImmutableDictionary();
 
-    private static List Zip(Expression ps,
-        Expression args)
+    private static List Zip(Expression ps, Expression args)
     {
         return ZipDotted(NilExpr, ps, args);
 

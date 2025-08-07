@@ -338,3 +338,13 @@
                     ,@commands
                     (,loop-var ,@steps))))))))
 
+(define-macro (let first . rest)
+  (if (symbol? first)
+      ;; Named let form
+      `(letrec ((,first (lambda ,(map car (car rest))
+                          ,@(cdr rest))))
+         (,first ,@(map cadr (car rest))))
+      ;; Regular let form
+      `((lambda ,(map car first)
+          ,@rest)
+        ,@(map cadr first))))
