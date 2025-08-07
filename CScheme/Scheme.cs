@@ -359,25 +359,6 @@ public class Scheme
             _ => throw SyntaxError("'Define'", exprs)
         };
 
-    private static EvalContext Apply(Environment env, Expression exprs)
-    {
-        if (exprs is not Pair {Car: Symbol {Value: var procName}, Cdr: var args})
-        {
-            throw SyntaxError("'apply'", exprs);
-        }
-
-        var proc = Lookup(procName, env);
-        var evaluatedArgs = Map(e => Eval(env, e).Expression, args)
-            .AndThen(ars => ars is Pair {Car: var car, Cdr: Nil} ? car : ars);
-        
-        return proc switch
-        {
-            Procedure p => p.Fn(env, evaluatedArgs),
-            Function f => f.Fn(evaluatedArgs).AndThen(r => new EvalContext(env, r)),
-            _ => throw SyntaxError("", exprs)
-        };
-    }
-
     private static EvalContext DefineMacro(Environment env, Expression exprs)
     {
         if (exprs is not Pair { Car: Pair{ Car: Symbol {Value: var sym }, Cdr: var parameters}, Cdr: Pair { Car: var body }})
@@ -537,7 +518,6 @@ public class Scheme
         { "define-macro", new Procedure(DefineMacro) },
         { "begin", new Procedure(Begin) },
         { "define", new Procedure(Define) },
-        { "apply", new Procedure(Apply) },
         { "load", new Procedure(Load) },
         { "display", new Function(Display) },
         { "number?", new Function(Is<Number>) },

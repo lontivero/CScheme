@@ -348,3 +348,7 @@
       `((lambda ,(map car first)
           ,@rest)
         ,@(map cadr first))))
+
+(define-macro (apply fn args)
+  (let ((arglist (eval args)))
+    `(,fn ,@arglist)))
