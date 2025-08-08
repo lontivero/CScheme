@@ -120,7 +120,7 @@ public class ConsoleInputReader
 
             switch (keyInfo.Key)
             {
-                case ConsoleKey.Enter when keyInfo.Modifiers.HasFlag(ConsoleModifiers.Shift):
+                case ConsoleKey.Enter when keyInfo.Modifiers.HasFlag(ConsoleModifiers.Alt):
                     HandleNewLine(input, ref cursorPosition, ref currentLine, ref initialCursorTop, initialCursorLeft);
                     break;
                     

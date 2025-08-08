@@ -335,4 +335,6 @@
   (test #f (odd? 1000))
   )
 
+(test '(1 2) (apply append '((1) (2))))
+
 (writeln "Done!")

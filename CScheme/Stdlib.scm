@@ -100,7 +100,7 @@
 ;; Define a simple implementation of apply as a macro
 ;; Note: This is not a standard implementation and has limitations
 ;; Bug: This implementation uses eval which is not hygienic and may not work correctly in all cases
-(define-macro (apply fn args)
+(define-macro (applyz fn args)
   (let ((arglist (eval args)))
     `(,fn ,@arglist)))
 
@@ -127,10 +127,18 @@
 
 ;; Combine two lists into a single list
 ;; Usage: (append '(1 2) '(3 4)) => (1 2 3 4)
-(define (append list1 list2)
-  (if (null? list1)
-      list2
-      (cons (car list1) (append (cdr list1) list2))))
+(define append
+  (lambda args
+    (cond ((null? args) '())
+          ((null? (cdr args)) (car args))
+          (else
+           (let loop ((list1 (car args))
+                      (remaining (cdr args)))
+             (cond ((null? remaining) list1)
+                   ((null? list1) (loop (car remaining) (cdr remaining)))
+                   (else
+                    (cons (car list1)
+                          (loop (cdr list1) remaining)))))))))
 
 ;; Access an element at a specific position in a list (0-based indexing)
 ;; Returns #f if index is out of bounds

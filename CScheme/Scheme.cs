@@ -41,7 +41,8 @@ public class Scheme
 
     private record Pair(Expression Car, Expression Cdr) : List;
 
-    private record DottedList(Expression Car, Expression Cdr) : Pair(Car, Cdr);
+    private record Dotted(Expression Expression) : Expression;
+    private record VarArgs(Expression Car, Expression Cdr) : Pair(Car, Cdr);
 
     private record Nil : List;
 
@@ -284,7 +285,7 @@ public class Scheme
             Environment Bind(Environment penv, Expression binding) =>
                 binding switch
                 {
-                    DottedList {Car: Symbol {Value: var sym}, Cdr: List lst} =>
+                    VarArgs {Car: Symbol {Value: var sym}, Cdr: List lst} =>
                         Map(e => Eval(callerEnv, e).Expression, lst)
                             .AndThen(r => ExtendEnvironment([(sym, r)], penv)),
                     Pair {Car: Symbol {Value: var sym}, Cdr: var e} =>
@@ -316,7 +317,6 @@ public class Scheme
 
     private static EvalContext QuasiQuote(Environment env, Expression exprs)
     {
-        var u = Unquote(exprs);
         return new EvalContext(env, Unquote(exprs));
 
         Expression Unquote(Expression expr) =>
@@ -358,6 +358,25 @@ public class Scheme
                     .AndThen(penv => new EvalContext(penv, new DummyExpression($"Define {sym}"))),
             _ => throw SyntaxError("'Define'", exprs)
         };
+
+    private static EvalContext Apply(Environment env, Expression exprs)
+    {
+        if (exprs is not Pair {Car: Symbol {Value: var procName}, Cdr: var args})
+        {
+            throw SyntaxError("'apply'", exprs);
+        }
+
+        var proc = Lookup(procName, env);
+        var evaluatedArgs = Map(e => Eval(env, e).Expression, args)
+            .AndThen(ars => ars is Pair {Car: var car, Cdr: Nil} ? car : ars);
+        
+        return proc switch
+        {
+            Procedure p => p.Fn(env, evaluatedArgs),
+            Function f => f.Fn(evaluatedArgs).AndThen(r => new EvalContext(env, r)),
+            _ => throw SyntaxError("", exprs)
+        };
+    }
 
     private static EvalContext DefineMacro(Environment env, Expression exprs)
     {
@@ -518,6 +537,7 @@ public class Scheme
         { "define-macro", new Procedure(DefineMacro) },
         { "begin", new Procedure(Begin) },
         { "define", new Procedure(Define) },
+        { "apply", new Procedure(Apply) },
         { "load", new Procedure(Load) },
         { "display", new Function(Display) },
         { "number?", new Function(Is<Number>) },
@@ -537,14 +557,19 @@ public class Scheme
 
     private static List Zip(Expression ps, Expression args)
     {
-        return ZipDotted(NilExpr, ps, args);
 
+        return ps switch
+        {
+            Nil => NilExpr,
+            Symbol sym => Cons(new VarArgs(sym, args), NilExpr),
+            Pair => ZipDotted(NilExpr, ps, args)
+        };
+        
         List ZipDotted(List acc, Expression pps, Expression pas) =>
             (pps, pas) switch
             {
                 (Pair { Car: Symbol p}, Pair { Car: var a}) => Cons(Cons(p, a), ZipDotted(acc, Cdr(pps), Cdr(pas))),
-                (Symbol p, Pair { Cdr: not Nil } tas) => Cons(new DottedList(p, tas), acc),
-                (Symbol p, var tas) => Cons(new DottedList(p, tas), acc),
+                (Symbol p, var tas) => Cons(new VarArgs(p, tas), acc),
                 (Nil,Nil) => acc,
                 _ => throw SyntaxError($"parameters were expected but were passed.", ps)
             };
