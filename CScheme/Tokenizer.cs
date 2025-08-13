@@ -94,7 +94,7 @@ public static class Tokenizer
                     break;
                 default:
                     yield return ParseToken()
-                        .AndThen<string, Token>(t => t switch
+                        .Then<string, Token>(t => t switch
                         {
                             "#t" or "#true" => True,
                             "#f" or "#false"  => False,
