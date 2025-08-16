@@ -306,15 +306,10 @@ public class Scheme
         }
     }
 
-    private static ExpressionsProcessor Math(decimal identity, decimal unary, Func<decimal, decimal, decimal> op) =>
-        es => es switch
-        {
-            Nil => new Number(identity),
-            Number(var n) => new Number(unary * n),
-            Pair(Number(var n), var ns) => new Number(Fold(n,
-                (acc, e) => op(acc, e is Number(var nn) ? nn : throw SyntaxError("ss", e)), ns)),
-            _ => throw SyntaxError("Math can only involve number", es)
-        };
+    private static ExpressionsProcessor Math(Func<decimal, decimal, decimal> op) =>
+        es => es is Pair(Number(var n1), Pair(Number(var n2), _))
+            ? new Number(op(n1, n2))
+            : throw SyntaxError("Math can only involve number", es);
 
     private static ExpressionsProcessor Compare(Func<decimal, decimal, bool> op) =>
         es => es is Pair(Number(var a), Pair(Number(var b), _))
@@ -360,11 +355,11 @@ public class Scheme
             _ => False
         };
 
-    private static readonly ExpressionsProcessor Add = Math(0L, 1L, (a, b) => a + b);
-    private static readonly ExpressionsProcessor Subtract = Math(0L, -1L, (a, b) => a - b);
-    private static readonly ExpressionsProcessor Multiply = Math(1L, 1L, (a, b) => a * b);
-    private static readonly ExpressionsProcessor Divide = Math(1L, 1L, (a, b) => a / b);
-    private static readonly ExpressionsProcessor Modulus = Math(1L, 1L, (a, b) => a % b);
+    private static readonly ExpressionsProcessor Add = Math((a, b) => a + b);
+    private static readonly ExpressionsProcessor Subtract = Math((a, b) => a - b);
+    private static readonly ExpressionsProcessor Multiply = Math((a, b) => a * b);
+    private static readonly ExpressionsProcessor Divide = Math((a, b) => a / b);
+    private static readonly ExpressionsProcessor Modulus = Math((a, b) => a % b);
 
     private static readonly ExpressionsProcessor Greater = Compare((a, b) => a > b);
     private static readonly ExpressionsProcessor Less = Compare((a, b) => a < b);
@@ -394,13 +389,22 @@ public class Scheme
     private static ExpressionsProcessor SymbolToString =
         Convert<Symbol>(sym => new String(sym.Value), "symbol->string"); 
     
+    private static ExpressionsProcessor StringToNumber =
+        Convert<String>(str => decimal.TryParse(str.Value, CultureInfo.InvariantCulture, out var n) 
+            ? new Number(n) : False, "string->number"); 
+    
+    private static ExpressionsProcessor StringToList =
+        Convert<String>(str => str.Value.Reverse().Aggregate((Expression)NilExpr, (acc, c) => Cons(new Character(c.ToString()), acc)) , "string->list"); 
+    
+    private static ExpressionsProcessor ListToString =
+        Convert<List>(lst => new String(lst switch
+        {
+            Nil => "",
+            Pair p => string.Join("", FlatPairChain(p).OfType<Character>().Select(x => x.Value))
+        }), "list->string"); 
+        
     private static ExpressionsProcessor NumberToString =
         Convert<Number>(num => new String(num.Value.ToString(CultureInfo.InvariantCulture)), "number->string"); 
-    
-    private static Expression StringAppend(Expression exprs) =>
-        exprs is Pair(String(var str1), Pair(String(var str2), _))
-            ? new String($"{str1}{str2}")
-            : throw SyntaxError("string-append", exprs);
     
     private static Expression NullQm(Expression es) =>
         es is Nil or Pair(Nil,Nil) ? True : False;
@@ -434,16 +438,16 @@ public class Scheme
     private static Boolean Is<T>(Expression xs) => xs is T ? True : False;
 
     public static readonly Environment Env = new Dictionary<string, Expression> {
-        { "*", new Function(Multiply) },
-        { "/", new Function(Divide) },
+        { "$math_op_*", new Function(Multiply) },
+        { "$math_op_/", new Function(Divide) },
+        { "$math_op_+", new Function(Add) },
+        { "$math_op_-", new Function(Subtract) },
+        { "$compare_=", new Function(NumericEquality) },
+        { "$compare_>", new Function(Greater) },
+        { "$compare_<", new Function(Less) },
         { "%", new Function(Modulus) },
-        { "+", new Function(Add) },
-        { "-", new Function(Subtract) },
-        { "=", new Function(NumericEquality) },
         { "eq?", new Function(IdentityEquality) },
         { "equal?", new Function(CompareStructuralEquality) },
-        { ">", new Function(Greater) },
-        { "<", new Function(Less) },
         { "null?", new Function(NullQm) },
         { "if", new Procedure(If) },
         { "letrec", new Procedure(LetRec) },
@@ -471,7 +475,9 @@ public class Scheme
         { "string->symbol", new Function(StringToSymbol)},
         { "symbol->string", new Function(SymbolToString)},
         { "number->string", new Function(NumberToString)},
-        { "string-append", new Function(StringAppend)}
+        { "string->number", new Function(StringToNumber)},
+        { "string->list", new Function(StringToList)},
+        { "list->string", new Function(ListToString)},
     }.ToImmutableDictionary();
 
     public static Environment DefineNativeFunction(string fname, Func<object> fn, Environment env) =>

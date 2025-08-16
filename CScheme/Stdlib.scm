@@ -97,12 +97,43 @@
               nil))))
      (loop)))
 
-;; Define a simple implementation of apply as a macro
-;; Note: This is not a standard implementation and has limitations
-;; Bug: This implementation uses eval which is not hygienic and may not work correctly in all cases
-(define-macro (applyz fn args)
-  (let ((arglist (eval args)))
-    `(,fn ,@arglist)))
+;;; ------------------
+;;; Variadic operations
+;;; ------------------
+(define (variadic_math_op op identity unary args)
+  (define (op-all acc remaining)
+    (if (null? remaining)
+      acc
+      (op-all (op acc (car remaining))
+        (cdr remaining))))
+  (cond
+    ((null? args) identity)                   ; + with no args returns 0
+    ((null? (cdr args)) (* unary (car args)))    ; + with one arg returns that arg
+    (else (op-all (car args) (cdr args)))))
+
+(define (+ . args) (variadic_math_op $math_op_+ 0 1 args))
+(define (- . args) (variadic_math_op $math_op_- 0 -1 args))
+(define (* . args) (variadic_math_op $math_op_* 1 1 args))
+(define (/ . args) (variadic_math_op $math_op_/ 1 1 args))
+
+(define (variadic-comparison compare-op args)
+  (define (all-compare? prev items)
+    (cond
+      ((null? items) #t)
+      ((compare-op prev (car items))
+        (all-compare? (car items) (cdr items)))
+      (else #f)))
+  (cond
+    ((null? args) #t)                  ; = with no args returns #t
+    ((null? (cdr args)) #t)            ; = with one arg returns #t
+    (else (all-compare? (car args) (cdr args)))))
+
+(define (= . args) (variadic-comparison $compare_= args))
+(define (> . args) (variadic-comparison $compare_> args))
+(define (< . args) (variadic-comparison $compare_< args))
+(define (<= . args) (variadic-comparison compare_<= args))
+(define (>= . args) (variadic-comparison compare_>= args))
+  
 
 ;;; ------------------
 ;;; List Manipulation
@@ -203,6 +234,17 @@
       (if (member? (car lst) items)
           (exclude items (cdr lst))
           (cons (car lst) (exclude items (cdr lst))))))
+
+(define (take lst n)
+  (cond ((= n 0) '())
+    ((null? lst) '())
+    (else (cons (car lst)
+            (take (cdr lst) (- n 1))))))
+
+(define (drop lst n)
+  (cond ((= n 0) lst)
+    ((null? lst) '())
+    (else (drop (cdr lst) (- n 1)))))
 
 ;;; ------------------
 ;;; Higher-Order List Functions
@@ -322,34 +364,45 @@
 (define (eqv? a b) 
   (if (eq? a b) #t (and (number? a) (equal? a b))))
 
+;; Check if an item is a member of a list using the provided comparere
+(define (memx item lst eq)
+  (if (null? lst) #f
+      (if (eq item (car lst)) lst
+          (memx item (cdr lst) eq))))
+
 ;; Check if an item is a member of a list (using equal?)
 ;; Usage: (member 'b '(a b c)) => (b c)
-(define (member item lst)
-  (if (null? lst) #f
-      (if (equal? item (car lst)) lst
-          (member item (cdr lst)))))
+(define (member item lst) (memx item lst equal?))
 
 ;; Check if an item is a member of a list (using eq?)
 ;; Usage: (memq 'b '(a b c)) => (b c)
-(define (memq item lst)
-  (if (null? lst) #f
-      (if (eq? item (car lst)) lst
-          (memq item (cdr lst)))))
+(define (memq item lst) (memx item lst eq?))
+
+;; Check if an item is a member of a list (using eqv?)
+;; Usage: (memv 'b '(a b c)) => (b c)
+(define (memv item lst) (memx item lst eqv?))
+
+;; Look up a key in an association list (using the given comparer)
+(define (associate key alist eq)
+  (cond ((null? alist) #f)
+    ((eq key (caar alist)) (car alist))
+    (else (associate key (cdr alist) eq))))
 
 ;; Look up a key in an association list (using eq?)
 ;; Usage: (assq 'b '((a . 1) (b . 2))) => (b . 2)
 (define (assq key alist)
-  (cond ((null? alist) #f)
-        ((eq? key (caar alist)) (car alist))
-        (else (assq key (cdr alist)))))
+  (associate key alist eq?))
 
 ;; Look up a key in an association list (using equal?)
 ;; Bug: Uses assq in else clause instead of recursively calling assoc
 (define (assoc key alist)
-  (cond ((null? alist) #f)
-        ((equal? key (caar alist)) (car alist))
-        (else (assq key (cdr alist)))))
+  (associate key alist equal?))
 
+;; Look up a key in an association list (using eqv?)
+;; Bug: Uses assv in else clause instead of recursively calling assoc
+(define (assv key alist)
+  (associate key alist eqv?))
+    
 ;;; ------------------
 ;;; Functional Programming Utilities
 ;;; ------------------
@@ -396,7 +449,7 @@
 (define (zero? x) (= 0 x))
 
 ;; Check if a number is positive (>=0)
-(define (positive? x) (>= x 0))
+(define (positive? x) (> x 0))
 
 ;; Check if a number is negative
 (define (negative? x) (< x 0))
@@ -421,12 +474,31 @@
 
 ;; Calculate b raised to the power of n
 ;; Usage: (expt 2 3) => 8
-(define (expt b n)
-  (if (= 0 n) 
-      1
-      (if (even? n) 
-          (square (expt b (/ n 2)))
-          (* b (expt b (- n 1))))))
+(define (expt base exponent)
+  (cond
+    ;; Handle division by zero error case - raising 0 to a negative power
+    ((and (zero? base) (negative? exponent))
+      (error "expt: cannot raise 0 to a negative power"))
+
+    ;; Handle 0^0 = 1 by convention
+    ((and (zero? base) (zero? exponent))
+      1)
+
+    ;; Handle positive exponents with standard recursive approach
+    ((>= exponent 0)
+      (expt-iter base exponent 1))
+
+    ;; Handle negative exponents as 1/(base^abs(exponent))
+    (else
+      (/ 1 (expt-iter base (- exponent) 1)))))
+
+;; Helper function using tail recursion for efficiency
+(define (expt-iter b e r)
+  (if (= 0 e) 
+      r
+      (if (even? e) 
+          (expt-iter (square b) (/ e 2) r)
+          (expt-iter b (- e 1) (* r b)))))
 
 ;; Sum all elements in a list or all arguments
 ;; Usage: (sum 1 2 3) => 6 or (sum '(1 2 3)) => 6
@@ -451,10 +523,10 @@
       remainder))
 
 ;; Greater than or equal comparison
-(define (>= a b) (or (> a b) (= a b)))
+(define (compare_>= a b) (or (> a b) (= a b)))
 
 ;; Less than or equal comparison
-(define (<= a b) (or (< a b) (= a b)))
+(define (compare_<= a b) (or (< a b) (= a b)))
 
 ;; Find the maximum value among arguments
 (define (max x . rest)
@@ -520,6 +592,64 @@
       0
       (abs (/ (* a b) (gcd a b)))))
 
+(define (decimal-part n) (% n 1))
+(define (integer-part n) (- n (decimal-part n)))
+(define truncate integer-part)
+
+(define (quotient n d)
+  (/ (- n (remainder n d)) d))
+
+(define (floor x)
+  (cond
+    ;; If x is already an integer, return it
+    ((= (decimal-part x) 0) x)
+
+    ;; For positive numbers, truncate toward zero
+    ((>= x 0) (truncate x))
+
+    ;; For negative numbers with a decimal part, subtract 1 from truncated value
+    (else (- (truncate x) 1))))
+
+(define (ceiling x)
+  (cond
+    ;; If x is already an integer, return it
+    ((= (decimal-part x) 0) x)
+
+    ;; For negative numbers, truncate toward zero
+    ((< x 0) (truncate x))
+
+    ;; For positive numbers with a decimal part, add 1 to truncated value
+    (else (+ (truncate x) 1))))
+
+
+(define (round x)
+  (cond
+    ;; If x is already an integer, return it
+    ((= (decimal-part x) 0) x)
+
+    ;; Special case for negative 0.5 (round to 0)
+    ((= x -0.5) 0)
+
+    ;; Handle the specific case of x.5 (round to even)
+    ((= (abs (decimal-part x)) 0.5)
+      (let ((truncated (truncate x)))
+        (if (= (modulo truncated 2) 0)
+          ;; If truncated value is even, round to it
+          truncated
+          ;; If truncated value is odd, round away from zero
+          (if (> x 0)
+            (+ truncated 1)
+            (- truncated 1)))))
+
+    ;; For decimal part < 0.5, round toward zero (truncate)
+    ((< (abs (decimal-part x)) 0.5)
+      (truncate x))
+
+    ;; For decimal part > 0.5, round away from zero
+    (else
+      (if (> x 0)
+        (+ (truncate x) 1)
+        (- (truncate x) 1)))))
 ;;; ------------------
 ;;; I/O Operations
 ;;; ------------------
@@ -532,6 +662,50 @@
 
 ;; Display text followed by a newline
 (define (writeln text) (display text) (newline))
+
+;;; ------------------
+;;; Numbers 
+;;; ------------------
+(define complex? number?)
+(define real? number?)
+(define rational? number?)
+(define (integer? n)
+  (and (number? n) (= (remainder n 1) 0)))
+
+(define (exact? _) #t)
+(define (inexact? _) #f)
+
+;;; ------------------
+;;; Strings
+;;; ------------------
+(define (string-length str)
+  (length (string->list str)))
+
+(define (string=? a b)
+  (equal? 
+    (string->list a) 
+    (string->list b)))
+
+(define (substring str start end)
+  (list->string
+    (take (drop (string->list str) start)
+      (- end start))))
+
+(define (string-append . strings)
+  (list->string
+   (let loop ((remaining strings)
+              (result '()))
+     (if (null? remaining)
+         result
+         (loop (cdr remaining)
+               (append result (string->list (car remaining))))))))
+
+(define (make-string n char)
+  (list->string
+    (let loop ((count 0) (result '()))
+      (if (= count n)
+        (reverse result)
+        (loop (+ count 1) (cons char result))))))
 
 ;;; ------------------
 ;;; Error Handling

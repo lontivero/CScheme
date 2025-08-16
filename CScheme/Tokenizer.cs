@@ -90,6 +90,7 @@ public static class Tokenizer
                     break;
                 case '-' when i + 1 < chars.Length && char.IsDigit(chars[i + 1]): 
                 case '+' when i + 1 < chars.Length && char.IsDigit(chars[i + 1]):
+                case '.' when i + 1 < chars.Length && char.IsDigit(chars[i + 1]):
                     yield return new NumberToken(ParseToken());
                     break;
                 default:

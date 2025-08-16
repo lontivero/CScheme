@@ -51,7 +51,8 @@
 (test #f (memq (list 'a) '(b (a) c)))
 
 (test '((a) c) (member (list 'a) '(b (a) c)))
-; (test '(101 102) (memv 101 '(100 101 102)))
+
+(test '(101 102) (memv 101 '(100 101 102)))
 
 (test 6 (let ((x 2) (y 3)) (* x y)))
 
@@ -102,6 +103,15 @@
 (test #t (eq? '() '()))
 
 (test #t (eq? car car))
+
+(test #t (eqv? 'a 'a))
+(test #f (eqv? 'a 'b))
+(test #t (eqv? 2 2))
+(test #t (eqv? '() '()))
+(test #t (eqv? '10000 '10000))
+(test #f (eqv? (cons 1 2)(cons 1 2)))
+(test #f (eqv? (lambda () 1) (lambda () 2)))
+(test #f (eqv? #f 'nil))
 
 (test #t (let ((x '(a))) (eq? x x)))
 
@@ -165,6 +175,21 @@
 
 (test 288 (lcm 32 -36))
 
+(test 2 (quotient 7 3))
+(test -2 (quotient -7 3))
+(test -2 (quotient 7 -3))
+(test 2 (quotient -7 -3))
+
+(test -5.0 (floor -4.3))
+(test -4.0 (ceiling -4.3))
+(test -4.0 (truncate -4.3))
+(test -4.0 (round -4.3))
+(test 3.0 (floor 3.5))
+(test 4.0 (ceiling 3.5))
+(test 3.0 (truncate 3.5))
+(test 4.0 (round 3.5))
+(test 7 (round 7))
+
 (test #f (not 3))
 
 (test #f (not (list 3)))
@@ -215,7 +240,7 @@
 
 (test '((a)) (assoc (list 'a) '(((a)) ((b)) ((c)))))
 
-;(test '(5 7) (assv 5 '((2 3) (5 7) (11 13))))
+(test '(5 7) (assv 5 '((2 3) (5 7) (11 13))))
 
 (test #f (list? '(a . b)))
 
@@ -279,6 +304,8 @@
 
 (test #f (symbol? '()))
 
+(test #f (symbol? #f))
+
 (test #t (string? "a"))
 
 (test #f (string? 'a))
@@ -324,6 +351,137 @@
 ; (test '(list 3 4)
 ;   (quasiquote (list (unquote (+ 1 2)) 4)))
 
+(test #f (string=? (symbol->string 'a) (symbol->string 'A)))
+
+(test #f 
+  (or (string=? (symbol->string 'a) "A")
+    (string=? (symbol->string 'A) "a")))
+
+(test #t (number? 3))
+(test #t (complex? 3))
+(test #t (real? 3))
+(test #t (rational? 3))
+(test #t (integer? 3))
+(test #t (exact? 3))
+(test #f (inexact? 3))
+
+(test 1 (expt 0 0))
+(test 0 (expt 0 1))
+(test 0 (expt 0 256))
+(test 1 (expt -1 256))
+(test -1 (expt -1 255))
+(test 1 (expt -1 -256))
+(test -1 (expt -1 -255))
+(test 1 (expt 256 0))
+(test 1 (expt -256 0))
+(test 256 (expt 256 1))
+(test -256 (expt -256 1))
+(test 8 (expt 2 3))
+(test -8 (expt -2 3))
+(test 9 (expt 3 2))
+(test 9 (expt -3 2))
+
+(test #t (= 22 22 22))
+(test #t (= 22 22))
+(test #f (= 34 34 35))
+(test #f (= 34 35))
+(test #t (> 3 -6246))
+(test #f (> 9 9 -2424))
+(test #t (>= 3 -4 -6246))
+(test #t (>= 9 9))
+(test #f (>= 8 9))
+(test #t (< -1 2 3 4 5 6 7 8))
+(test #f (< -1 2 3 4 4 5 6 7))
+(test #t (<= -1 2 3 4 5 6 7 8))
+(test #t (<= -1 2 3 4 4 5 6 7))
+(test #f (< 1 3 2))
+(test #f (>= 1 3 2))
+
+(test #t (zero? 0))
+(test #f (zero? 1))
+(test #f (zero? -1))
+(test #f (zero? -100))
+(test #t (positive? 4))
+(test #f (positive? -4))
+(test #f (positive? 0))
+(test #f (negative? 4))
+(test #t (negative? -4))
+(test #f (negative? 0))
+(test #t (odd? 3))
+(test #f (odd? 2))
+(test #f (odd? -4))
+(test #t (odd? -1))
+(test #f (even? 3))
+(test #t (even? 2))
+(test #t (even? -4))
+(test #f (even? -1))
+
+(test 38 (max 34 5 7 38 6))
+(test -24 (min 3  5 5 330 4 -24))
+
+(test 7 (+ 3 4))
+(test '3 (+ 3))
+(test 0 (+))
+(test 4 (* 4))
+(test 1 (*))
+(test 1 (/ 1))
+(test -1 (/ -1))
+(test 2 (/ 6 3))
+(test -3 (/ 6 -2))
+(test -3 (/ -6 2))
+(test 3 (/ -6 -2))
+(test -1 (- 3 4))
+(test -3 (- 3))
+(test 7 (abs -7))
+(test 7 (abs 7))
+(test 0 (abs 0))
+
+(test 3.9 (string->number "3.9"))
+(test 4.0 (string->number "4.0"))
+(test -3.25 (string->number "-3.25"))
+(test .25 (string->number ".25"))
+(test 4.5 (string->number "4.5"))
+(test 3.5 (string->number "3.5"))
+(test 0.0 (string->number "0.0"))
+(test 0.8 (string->number "0.8"))
+(test 1.0 (string->number "1.0"))
+
+(test "0" (number->string 0))
+(test "100" (number->string 100))
+
+;(test "100" (number->string 256 16))
+(test 100 (string->number "100"))
+;(test 256 (string->number "100" 16))
+(test #f (string->number ""))
+(test #f (string->number "."))
+(test #f (string->number "d"))
+(test #f (string->number "D"))
+(test #f (string->number "i"))
+(test #f (string->number "I"))
+(test #f (string->number "3i"))
+(test #f (string->number "3I"))
+(test #f (string->number "33i"))
+(test #f (string->number "33I"))
+(test #f (string->number "3.3i"))
+(test #f (string->number "3.3I"))
+
+(test "" (substring "ab" 0 0))
+(test "" (substring "ab" 1 1))
+(test "" (substring "ab" 2 2))
+(test "a" (substring "ab" 0 1))
+(test "b" (substring "ab" 1 2))
+(test "ab" (substring "ab" 0 2))
+(test "foobar" (string-append "foo" "bar"))
+(test "foo" (string-append "foo"))
+(test "foo" (string-append "foo" ""))
+(test "foo" (string-append "" "foo"))
+
+(test 0 (apply + '()))
+(test 7 (apply + (list 3 4)))
+; (test 7 (apply (lambda (a b) (+ a b)) (list 3 4)))
+; (test 17 (apply + 10 (list 3 4)))
+(test '() (apply list '()))
+
 (writeln "letrec tests ---")
 (letrec ((add (lambda (a b) (+ a b))))
   (test 7 (add 3 4)))
@@ -335,6 +493,6 @@
   (test #f (odd? 1000))
   )
 
-(test '(1 2) (apply append '((1) (2))))
+;(test '(1 2) (apply append '((1) (2))))
 
 (writeln "Done!")
